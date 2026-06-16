@@ -5,8 +5,7 @@ require_relative "lib/aicoustics/version"
 Gem::Specification.new do |spec|
   spec.name = "aicoustics"
   spec.version = Aicoustics::VERSION
-  spec.authors = ["Magic Notes"]
-  spec.email = ["engineering@beam.org"]
+  spec.authors = ["jjholmes927"]
 
   spec.summary = "Ruby FFI bindings for the ai-coustics speech enhancement SDK (v#{Aicoustics::SDK_VERSION})"
   spec.description = "Server-side Ruby bindings for the ai-coustics SDK: speech enhancement, " \

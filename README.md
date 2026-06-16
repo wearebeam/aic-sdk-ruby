@@ -1,9 +1,8 @@
 # aicoustics
 
 Ruby FFI bindings for the [ai-coustics SDK](https://github.com/ai-coustics/aic-sdk-c)
-(`v0.20.0`) — server-side **speech enhancement**, **voice activity detection**, and the
-**Tyto** audio-quality analyzer. Built so Magic Notes can move audio enhancement and VAD
-off the browser and onto the backend, keeping the frontend to capture + transport.
+(`v0.20.0`) — **speech enhancement**, **voice activity detection**, and the **Tyto**
+audio-quality analyzer, for running ai-coustics audio processing server-side from Ruby.
 
 This is a thin, faithful wrapper over the vendored native library (the same core the
 official `@ai-coustics/aic-sdk-wasm`, `aic-sdk-py`, and `aic-sdk-rs` packages wrap). No
@@ -27,7 +26,7 @@ rake vendor:fetch            # downloads libaic for all 4 platforms into vendor/
 bundle exec rspec            # offline specs pass without a license
 ```
 
-Add it to Magic Notes by path or git:
+Add it to your app by git or path:
 
 ```ruby
 # Gemfile
@@ -35,7 +34,7 @@ gem "aicoustics", git: "https://github.com/jjholmes927/aic-sdk-ruby.git"
 # or local: gem "aicoustics", path: "../aicoustics"
 ```
 
-`ffi` is already in the Magic Notes bundle, so this adds no new transitive dependency.
+`ffi` is the only runtime dependency (often already present in a Ruby app's bundle).
 Build a deployable `.gem` (with binaries bundled, for private/internal use only) by
 running `rake vendor:fetch` before `gem build` — never `gem push` to a public registry.
 
@@ -95,36 +94,12 @@ Errors map the SDK's `AicErrorCode` to typed exceptions under `Aicoustics::Error
 (`LicenseExpiredError`, `ModelVersionUnsupportedError`, `EnhancementNotAllowedError`, …),
 each carrying `#code`.
 
-## Magic Notes integration (sketch)
-
-The natural insertion point is `Interpret::Transcription::BatchTranscribeTurn`, right
-before the Scribe call, behind a feature flag:
-
-```ruby
-audio_data = pcm_chunks.join
-
-if Feature.enabled?(:interpret_server_side_enhancement, account)
-  audio_data = Aicoustics.enhance_pcm(
-    audio_data,
-    model: AicousticsModel.path,                       # vendored/cached v5 .aicmodel
-    license_key: Rails.application.credentials.ai_acoustics_sdk_key,
-    sample_rate: Interpret::Conversation::SAMPLE_RATE, # 16_000
-    enhancement_level: 1.0
-  ).pcm
-end
-
-Interpret::Transcription::ScribeBatchTranscribe.call(pcm_data: audio_data)
-```
-
-The same pass can return `speech_flags` to drive a server-side silence gate (the audio is
-mono 16 kHz, exactly what Scribe consumes as `audio/L16` / `pcm_s16le_16`).
-
 ## Models
 
 - Download from `https://artifacts.ai-coustics.io/`. SDK `0.20.0` requires **model
   version 5** (`Aicoustics.compatible_model_version # => 5`).
-- The frontend currently loads a **v4** `quail-s-16khz` model; for the backend use a **v5**
-  model, e.g. `quail-vf-2-1-s-16khz/v5/quail_vf_2_1_s_16khz_5i8jb8of_v12.aicmodel`.
+- Use a **v5** model, e.g. `quail-vf-2-1-s-16khz/v5/quail_vf_2_1_s_16khz_5i8jb8of_v12.aicmodel`
+  (validated). Models below the SDK's compatible version are rejected at load.
 - Optimal frame size is **model-dependent** (this model is 240 samples / 15 ms at 16 kHz).
   Always read `model.optimal_num_frames(rate)` — do not hardcode.
 - `rake "model:fetch[URL=...]"` downloads a model for local dev (gitignored).
@@ -134,10 +109,9 @@ mono 16 kHz, exactly what Scribe consumes as `audio/L16` / `pcm_s16le_16`).
 - **glibc only.** The Linux builds target `*-unknown-linux-gnu`. Run on a glibc base image
   (Debian/Ubuntu slim) — **not** Alpine/musl.
 - **Network egress required.** `process_*` returns `enhancement_not_allowed` if the SDK
-  cannot reach ai-coustics to authorize the key and report usage. Cloud Run workers already
-  have egress (they call LLMs), so this is satisfied.
-- **License tier.** The existing `ai_acoustics_sdk_key` credential is provisioned for
-  browser use; confirm it (or a new key) permits server-side usage before rollout.
+  cannot reach ai-coustics to authorize the key and report usage — allow outbound network
+  in your runtime.
+- **License tier.** Confirm your license key permits server-side usage before rollout.
 - **Threading.** A `Processor` is single-threaded for `process_*` — create one per thread
   / GoodJob worker. The `*_context` parameter/VAD APIs are thread-safe.
 
@@ -168,5 +142,6 @@ License/model-gated specs skip unless these are set:
 
 ## Licensing
 
-Binding source is Apache-2.0. The vendored `libaic.*` and `aic.h` are proprietary
-ai-coustics SDK artifacts — do not redistribute publicly. See `LICENSE`.
+Wrapper source is Apache-2.0 (`LICENSE`). The `libaic.*` binaries and `aic.h` are
+proprietary ai-coustics SDK artifacts, fetched via `rake vendor:fetch` and governed by
+`LICENSE.AIC-SDK` — do not commit or redistribute them publicly.
