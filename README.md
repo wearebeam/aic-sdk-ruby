@@ -142,6 +142,6 @@ License/model-gated specs skip unless these are set:
 
 ## Licensing
 
-Wrapper source is Apache-2.0 (`LICENSE`). The `libaic.*` binaries and `aic.h` are
-proprietary ai-coustics SDK artifacts, fetched via `rake vendor:fetch` and governed by
-`LICENSE.AIC-SDK` — do not commit or redistribute them publicly.
+Wrapper source is Apache-2.0 (`LICENSE`, see also `NOTICE`). The `libaic.*` binaries and
+`aic.h` are proprietary ai-coustics SDK artifacts, fetched via `rake vendor:fetch` and
+governed by `LICENSE.AIC-SDK` — do not commit or redistribute them publicly.

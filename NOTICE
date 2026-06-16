@@ -1,0 +1,12 @@
+aicoustics (aic-sdk-ruby)
+Copyright 2026 jjholmes927
+
+This product includes the Ruby wrapper source, licensed under the Apache
+License, Version 2.0 (see LICENSE).
+
+It links against the ai-coustics SDK native libraries (libaic.so / libaic.dylib)
+and the C header aic.h, which are NOT distributed in this repository. They are
+fetched from ai-coustics' official releases via `rake vendor:fetch` and are
+proprietary to ai-coustics GmbH under the AIC-SDK Binary License Agreement
+(see LICENSE.AIC-SDK). Those artifacts may not be committed to this repository
+or otherwise redistributed publicly.
