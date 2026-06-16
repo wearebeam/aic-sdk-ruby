@@ -1,0 +1,14 @@
+Copyright (c) ai-coustics GmbH and Magic Notes.
+
+The Ruby binding source in this repository (lib/, spec/, Rakefile, gemspec)
+is licensed under the Apache License, Version 2.0, mirroring the upstream
+ai-coustics C interface (https://github.com/ai-coustics/aic-sdk-c).
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+The native ai-coustics libraries (libaic.{so,dylib}) and the header aic.h are
+NOT included in this repository. They are fetched from ai-coustics' official
+releases via `rake vendor:fetch` and are governed by the proprietary AIC-SDK
+license in LICENSE.AIC-SDK. Per that license they may NOT be redistributed via
+a public repository or registry separate from an application. Do not commit
+them here and do not `gem push` a built gem to a public registry.

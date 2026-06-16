@@ -1,0 +1,13 @@
+/.bundle/
+/pkg/
+/tmp/
+/spec/fixtures/*.aicmodel
+Gemfile.lock
+*.gem
+
+vendor/aic/**/*.so
+vendor/aic/**/*.dylib
+vendor/aic/**/*.dll
+vendor/aic/**/*.a
+vendor/aic/**/*.lib
+vendor/aic/include/aic.h
