@@ -32,4 +32,7 @@ module Aicoustics
   end
 end
 
-Aicoustics._set_wrapper_id("aicoustics-ruby/#{Aicoustics::VERSION}") if Aicoustics.respond_to?(:_set_wrapper_id)
+# NB: the SDK's aic_set_sdk_wrapper_id(uint32_t) is intentionally not called. It tags
+# telemetry with an ai-coustics-assigned per-wrapper ID (C++=1, Rust=2); there is no Ruby
+# ID, and the official Python and Node bindings likewise don't call it. (The old FFI binding
+# called it with a String, which mismatched the uint32_t ABI.)

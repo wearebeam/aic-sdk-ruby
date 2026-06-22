@@ -18,9 +18,6 @@
  * Aicoustics.check!, keeping all error policy in one place (lib/.../errors.rb).
  */
 
-/* aic_set_sdk_wrapper_id is present in the binary but absent from aic.h. */
-extern void aic_set_sdk_wrapper_id(const char *wrapper_id);
-
 static VALUE mAicoustics;
 static VALUE cModel, cProcessor, cProcessorContext, cVadContext, cAnalyzer;
 
@@ -613,7 +610,6 @@ static VALUE analyzer_update_bearer_token(VALUE self, VALUE token) {
 
 static VALUE m_sdk_version(VALUE self) { (void)self; return rb_utf8_str_new_cstr(aic_get_sdk_version()); }
 static VALUE m_compatible_model_version(VALUE self) { (void)self; return UINT2NUM(aic_get_compatible_model_version()); }
-static VALUE m_set_wrapper_id(VALUE self, VALUE id) { (void)self; aic_set_sdk_wrapper_id(StringValueCStr(id)); return Qnil; }
 
 void Init_aicoustics_ext(void) {
   id_check_bang = rb_intern("check!");
@@ -627,7 +623,6 @@ void Init_aicoustics_ext(void) {
   mAicoustics = rb_define_module("Aicoustics");
   rb_define_singleton_method(mAicoustics, "sdk_version", m_sdk_version, 0);
   rb_define_singleton_method(mAicoustics, "compatible_model_version", m_compatible_model_version, 0);
-  rb_define_singleton_method(mAicoustics, "_set_wrapper_id", m_set_wrapper_id, 1);
 
   cModel = rb_define_class_under(mAicoustics, "Model", rb_cObject);
   rb_undef_alloc_func(cModel);
