@@ -14,13 +14,13 @@ typedef struct {
   VALUE model; /* retained for lifetime + GC marking */
 } processor_t;
 
-static void processor_free(void *p) {
-  processor_t *s = (processor_t *)p;
-  aic_processor_destroy(s->handle);
-  xfree(s);
+static void processor_free(void *ptr) {
+  processor_t *data = (processor_t *)ptr;
+  aic_processor_destroy(data->handle);
+  xfree(data);
 }
-static void processor_mark(void *p) { rb_gc_mark(((processor_t *)p)->model); }
-static size_t processor_memsize(const void *p) { (void)p; return sizeof(processor_t); }
+static void processor_mark(void *ptr) { rb_gc_mark(((processor_t *)ptr)->model); }
+static size_t processor_memsize(const void *ptr) { (void)ptr; return sizeof(processor_t); }
 static const rb_data_type_t processor_type = {
   "Aicoustics::Processor",
   { processor_mark, processor_free, processor_memsize },
@@ -28,14 +28,14 @@ static const rb_data_type_t processor_type = {
 };
 
 static processor_t *processor_state(VALUE self) {
-  processor_t *s;
-  TypedData_Get_Struct(self, processor_t, &processor_type, s);
-  return s;
+  processor_t *data;
+  TypedData_Get_Struct(self, processor_t, &processor_type, data);
+  return data;
 }
 static struct AicProcessor *processor_ptr(VALUE self) {
-  processor_t *s = processor_state(self);
-  if (!s->handle) rb_raise(rb_eRuntimeError, "Aicoustics::Processor handle is null");
-  return s->handle;
+  processor_t *data = processor_state(self);
+  if (!data->handle) rb_raise(rb_eRuntimeError, "Aicoustics::Processor handle is null");
+  return data->handle;
 }
 
 /* Processor.create(model, license_key, otel: nil) */
@@ -46,25 +46,25 @@ static VALUE processor_create(int argc, VALUE *argv, VALUE klass) {
   VALUE otel = Qnil;
   if (!NIL_P(opts)) otel = rb_hash_aref(opts, ID2SYM(rb_intern("otel")));
 
-  struct AicOtelConfig cfg;
-  struct AicOtelConfig *cfg_ptr = NULL;
+  struct AicOtelConfig otel_config;
+  struct AicOtelConfig *otel_config_ptr = NULL;
   VALUE session = Qnil;
   if (!NIL_P(otel)) {
-    cfg.enable = RTEST(rb_funcall(otel, id_enable, 0));
+    otel_config.enable = RTEST(rb_funcall(otel, id_enable, 0));
     session = rb_funcall(otel, id_session_id, 0);
-    cfg.session_id = NIL_P(session) ? NULL : StringValueCStr(session);
-    cfg.export_interval_ms = (uint32_t)NUM2UINT(rb_funcall(otel, id_export_interval_ms, 0));
-    cfg_ptr = &cfg;
+    otel_config.session_id = NIL_P(session) ? NULL : StringValueCStr(session);
+    otel_config.export_interval_ms = (uint32_t)NUM2UINT(rb_funcall(otel, id_export_interval_ms, 0));
+    otel_config_ptr = &otel_config;
   }
 
-  struct AicProcessor *h = NULL;
-  aic_check(aic_processor_create(&h, model_ptr(model), StringValueCStr(license_key), cfg_ptr));
+  struct AicProcessor *handle = NULL;
+  aic_check(aic_processor_create(&handle, model_ptr(model), StringValueCStr(license_key), otel_config_ptr));
   RB_GC_GUARD(session);
 
-  processor_t *s = ALLOC(processor_t);
-  s->handle = h;
-  s->model = model;
-  VALUE obj = TypedData_Wrap_Struct(klass, &processor_type, s);
+  processor_t *data = ALLOC(processor_t);
+  data->handle = handle;
+  data->model = model;
+  VALUE obj = TypedData_Wrap_Struct(klass, &processor_type, data);
   rb_ivar_set(obj, rb_intern("@model"), model);
   return obj;
 }
@@ -75,24 +75,24 @@ static VALUE processor_configure(int argc, VALUE *argv, VALUE self) {
   rb_scan_args(argc, argv, "0:", &opts);
   if (NIL_P(opts)) opts = rb_hash_new();
 
-  VALUE sr = rb_hash_aref(opts, ID2SYM(rb_intern("sample_rate")));
-  if (NIL_P(sr)) rb_raise(rb_eArgError, "missing keyword: :sample_rate");
-  VALUE ch = rb_hash_aref(opts, ID2SYM(rb_intern("num_channels")));
-  VALUE nf = rb_hash_aref(opts, ID2SYM(rb_intern("num_frames")));
-  VALUE avf = rb_hash_aref(opts, ID2SYM(rb_intern("allow_variable_frames")));
+  VALUE sample_rate_opt = rb_hash_aref(opts, ID2SYM(rb_intern("sample_rate")));
+  if (NIL_P(sample_rate_opt)) rb_raise(rb_eArgError, "missing keyword: :sample_rate");
+  VALUE num_channels_opt = rb_hash_aref(opts, ID2SYM(rb_intern("num_channels")));
+  VALUE num_frames_opt = rb_hash_aref(opts, ID2SYM(rb_intern("num_frames")));
+  VALUE allow_variable_opt = rb_hash_aref(opts, ID2SYM(rb_intern("allow_variable_frames")));
 
-  uint32_t sample_rate = (uint32_t)NUM2UINT(sr);
-  uint16_t num_channels = NIL_P(ch) ? 1 : (uint16_t)NUM2UINT(ch);
+  uint32_t sample_rate = (uint32_t)NUM2UINT(sample_rate_opt);
+  uint16_t num_channels = NIL_P(num_channels_opt) ? 1 : (uint16_t)NUM2UINT(num_channels_opt);
   size_t num_frames;
-  if (NIL_P(nf)) {
-    VALUE computed = rb_funcall(processor_state(self)->model, id_optimal_num_frames, 1, sr);
+  if (NIL_P(num_frames_opt)) {
+    VALUE computed = rb_funcall(processor_state(self)->model, id_optimal_num_frames, 1, sample_rate_opt);
     num_frames = NUM2SIZET(computed);
   } else {
-    num_frames = NUM2SIZET(nf);
+    num_frames = NUM2SIZET(num_frames_opt);
   }
 
   aic_check(aic_processor_initialize(processor_ptr(self), sample_rate, num_channels,
-                                     num_frames, RTEST(avf)));
+                                     num_frames, RTEST(allow_variable_opt)));
 
   rb_ivar_set(self, rb_intern("@sample_rate"), UINT2NUM(sample_rate));
   rb_ivar_set(self, rb_intern("@num_channels"), UINT2NUM(num_channels));
@@ -110,19 +110,19 @@ typedef struct {
 } process_args;
 
 static void *do_process_interleaved(void *arg) {
-  process_args *a = (process_args *)arg;
-  a->rc = aic_processor_process_interleaved(a->proc, a->audio, a->num_channels, a->num_frames);
+  process_args *args = (process_args *)arg;
+  args->rc = aic_processor_process_interleaved(args->proc, args->audio, args->num_channels, args->num_frames);
   return NULL;
 }
 static void *do_process_sequential(void *arg) {
-  process_args *a = (process_args *)arg;
-  a->rc = aic_processor_process_sequential(a->proc, a->audio, a->num_channels, a->num_frames);
+  process_args *args = (process_args *)arg;
+  args->rc = aic_processor_process_sequential(args->proc, args->audio, args->num_channels, args->num_frames);
   return NULL;
 }
 
 /* shared body for interleaved/sequential: mutate the binary float32 String in place */
 static VALUE processor_process_single(int argc, VALUE *argv, VALUE self,
-                                      void *(*fn)(void *)) {
+                                      void *(*process_fn)(void *)) {
   VALUE buffer, opts;
   rb_scan_args(argc, argv, "1:", &buffer, &opts);
   if (NIL_P(opts)) opts = rb_hash_new();
@@ -137,10 +137,10 @@ static VALUE processor_process_single(int argc, VALUE *argv, VALUE self,
              RSTRING_LEN(buffer), expected);
   }
 
-  process_args a = { processor_ptr(self), (float *)RSTRING_PTR(buffer),
-                     (uint16_t)num_channels, num_frames, AIC_ERROR_CODE_SUCCESS };
-  rb_thread_call_without_gvl(fn, &a, RUBY_UBF_IO, NULL);
-  aic_check(a.rc);
+  process_args args = { processor_ptr(self), (float *)RSTRING_PTR(buffer),
+                        (uint16_t)num_channels, num_frames, AIC_ERROR_CODE_SUCCESS };
+  rb_thread_call_without_gvl(process_fn, &args, RUBY_UBF_IO, NULL);
+  aic_check(args.rc);
   return buffer;
 }
 
@@ -160,22 +160,22 @@ static VALUE processor_process_planar(int argc, VALUE *argv, VALUE self) {
   size_t num_frames = ivar_sizet(self, "@num_frames", rb_hash_aref(opts, ID2SYM(rb_intern("num_frames"))));
   long num_channels = RARRAY_LEN(buffers);
 
-  VALUE tmp;
-  float **planes = (float **)rb_alloc_tmp_buffer(&tmp, sizeof(float *) * num_channels);
-  for (long i = 0; i < num_channels; i++) {
-    VALUE buf = rb_ary_entry(buffers, i);
-    StringValue(buf);
-    rb_str_modify(buf);
-    if ((size_t)RSTRING_LEN(buf) != num_frames * sizeof(float)) {
-      rb_free_tmp_buffer(&tmp);
+  VALUE tmp_buffer;
+  float **planes = (float **)rb_alloc_tmp_buffer(&tmp_buffer, sizeof(float *) * num_channels);
+  for (long channel = 0; channel < num_channels; channel++) {
+    VALUE channel_buffer = rb_ary_entry(buffers, channel);
+    StringValue(channel_buffer);
+    rb_str_modify(channel_buffer);
+    if ((size_t)RSTRING_LEN(channel_buffer) != num_frames * sizeof(float)) {
+      rb_free_tmp_buffer(&tmp_buffer);
       rb_raise(rb_eArgError, "channel %ld buffer is %ld bytes, expected %zu",
-               i, RSTRING_LEN(buf), num_frames * sizeof(float));
+               channel, RSTRING_LEN(channel_buffer), num_frames * sizeof(float));
     }
-    planes[i] = (float *)RSTRING_PTR(buf);
+    planes[channel] = (float *)RSTRING_PTR(channel_buffer);
   }
   enum AicErrorCode rc = aic_processor_process_planar(processor_ptr(self), planes,
                                                       (uint16_t)num_channels, num_frames);
-  rb_free_tmp_buffer(&tmp);
+  rb_free_tmp_buffer(&tmp_buffer);
   aic_check(rc);
   return buffers;
 }
@@ -185,24 +185,24 @@ static VALUE processor_process(VALUE self, VALUE floats) {
   Check_Type(floats, T_ARRAY);
   size_t num_frames = ivar_sizet(self, "@num_frames", Qnil);
   size_t num_channels = ivar_sizet(self, "@num_channels", Qnil);
-  size_t expected = num_frames * num_channels;
-  if ((size_t)RARRAY_LEN(floats) != expected) {
-    rb_raise(rb_eArgError, "expected %zu samples, got %ld", expected, RARRAY_LEN(floats));
+  size_t sample_count = num_frames * num_channels;
+  if ((size_t)RARRAY_LEN(floats) != sample_count) {
+    rb_raise(rb_eArgError, "expected %zu samples, got %ld", sample_count, RARRAY_LEN(floats));
   }
 
-  VALUE tmp;
-  float *audio = (float *)rb_alloc_tmp_buffer(&tmp, sizeof(float) * expected);
-  for (size_t i = 0; i < expected; i++) audio[i] = (float)NUM2DBL(rb_ary_entry(floats, i));
+  VALUE tmp_buffer;
+  float *audio = (float *)rb_alloc_tmp_buffer(&tmp_buffer, sizeof(float) * sample_count);
+  for (size_t i = 0; i < sample_count; i++) audio[i] = (float)NUM2DBL(rb_ary_entry(floats, i));
 
-  process_args a = { processor_ptr(self), audio, (uint16_t)num_channels, num_frames,
-                     AIC_ERROR_CODE_SUCCESS };
-  rb_thread_call_without_gvl(do_process_interleaved, &a, RUBY_UBF_IO, NULL);
-  if (a.rc != AIC_ERROR_CODE_SUCCESS) { rb_free_tmp_buffer(&tmp); aic_check(a.rc); }
+  process_args args = { processor_ptr(self), audio, (uint16_t)num_channels, num_frames,
+                        AIC_ERROR_CODE_SUCCESS };
+  rb_thread_call_without_gvl(do_process_interleaved, &args, RUBY_UBF_IO, NULL);
+  if (args.rc != AIC_ERROR_CODE_SUCCESS) { rb_free_tmp_buffer(&tmp_buffer); aic_check(args.rc); }
 
-  VALUE out = rb_ary_new_capa(expected);
-  for (size_t i = 0; i < expected; i++) rb_ary_push(out, DBL2NUM((double)audio[i]));
-  rb_free_tmp_buffer(&tmp);
-  return out;
+  VALUE output = rb_ary_new_capa(sample_count);
+  for (size_t i = 0; i < sample_count; i++) rb_ary_push(output, DBL2NUM((double)audio[i]));
+  rb_free_tmp_buffer(&tmp_buffer);
+  return output;
 }
 
 /* ---- ProcessorContext ----------------------------------------------- */
@@ -212,13 +212,13 @@ typedef struct {
   VALUE processor; /* retained so the processor outlives the context */
 } pctx_t;
 
-static void pctx_free(void *p) {
-  pctx_t *s = (pctx_t *)p;
-  aic_processor_context_destroy(s->handle);
-  xfree(s);
+static void pctx_free(void *ptr) {
+  pctx_t *data = (pctx_t *)ptr;
+  aic_processor_context_destroy(data->handle);
+  xfree(data);
 }
-static void pctx_mark(void *p) { rb_gc_mark(((pctx_t *)p)->processor); }
-static size_t pctx_memsize(const void *p) { (void)p; return sizeof(pctx_t); }
+static void pctx_mark(void *ptr) { rb_gc_mark(((pctx_t *)ptr)->processor); }
+static size_t pctx_memsize(const void *ptr) { (void)ptr; return sizeof(pctx_t); }
 static const rb_data_type_t pctx_type = {
   "Aicoustics::ProcessorContext",
   { pctx_mark, pctx_free, pctx_memsize },
@@ -226,16 +226,16 @@ static const rb_data_type_t pctx_type = {
 };
 
 static struct AicProcessorContext *pctx_ptr(VALUE self) {
-  pctx_t *s;
-  TypedData_Get_Struct(self, pctx_t, &pctx_type, s);
-  if (!s->handle) rb_raise(rb_eRuntimeError, "Aicoustics::ProcessorContext handle is null");
-  return s->handle;
+  pctx_t *data;
+  TypedData_Get_Struct(self, pctx_t, &pctx_type, data);
+  if (!data->handle) rb_raise(rb_eRuntimeError, "Aicoustics::ProcessorContext handle is null");
+  return data->handle;
 }
 
 static enum AicProcessorParameter pctx_param(VALUE name) {
-  ID id = SYM2ID(rb_to_symbol(name));
-  if (id == rb_intern("bypass")) return AIC_PROCESSOR_PARAMETER_BYPASS;
-  if (id == rb_intern("enhancement_level")) return AIC_PROCESSOR_PARAMETER_ENHANCEMENT_LEVEL;
+  ID param_id = SYM2ID(rb_to_symbol(name));
+  if (param_id == rb_intern("bypass")) return AIC_PROCESSOR_PARAMETER_BYPASS;
+  if (param_id == rb_intern("enhancement_level")) return AIC_PROCESSOR_PARAMETER_ENHANCEMENT_LEVEL;
   rb_raise(rb_eArgError, "unknown processor parameter: %" PRIsVALUE, name);
 }
 
@@ -244,12 +244,12 @@ static VALUE processor_context(VALUE self) {
   VALUE existing = rb_ivar_get(self, rb_intern("@context"));
   if (!NIL_P(existing)) return existing;
 
-  struct AicProcessorContext *h = NULL;
-  aic_check(aic_processor_context_create(&h, processor_ptr(self)));
-  pctx_t *s = ALLOC(pctx_t);
-  s->handle = h;
-  s->processor = self;
-  VALUE obj = TypedData_Wrap_Struct(cProcessorContext, &pctx_type, s);
+  struct AicProcessorContext *handle = NULL;
+  aic_check(aic_processor_context_create(&handle, processor_ptr(self)));
+  pctx_t *data = ALLOC(pctx_t);
+  data->handle = handle;
+  data->processor = self;
+  VALUE obj = TypedData_Wrap_Struct(cProcessorContext, &pctx_type, data);
   rb_ivar_set(obj, rb_intern("@processor"), self);
   rb_ivar_set(self, rb_intern("@context"), obj);
   return obj;
@@ -264,14 +264,14 @@ static VALUE pctx_set_parameter(VALUE self, VALUE param, VALUE value) {
   return value;
 }
 static VALUE pctx_get_parameter(VALUE self, VALUE param) {
-  float out = 0.0f;
-  aic_check(aic_processor_context_get_parameter(pctx_ptr(self), pctx_param(param), &out));
-  return DBL2NUM((double)out);
+  float value = 0.0f;
+  aic_check(aic_processor_context_get_parameter(pctx_ptr(self), pctx_param(param), &value));
+  return DBL2NUM((double)value);
 }
 static VALUE pctx_output_delay(VALUE self) {
-  size_t out = 0;
-  aic_check(aic_processor_context_get_output_delay(pctx_ptr(self), &out));
-  return SIZET2NUM(out);
+  size_t delay = 0;
+  aic_check(aic_processor_context_get_output_delay(pctx_ptr(self), &delay));
+  return SIZET2NUM(delay);
 }
 static VALUE pctx_update_bearer_token(VALUE self, VALUE token) {
   aic_check(aic_processor_context_update_bearer_token(pctx_ptr(self), StringValueCStr(token)));
@@ -285,13 +285,13 @@ typedef struct {
   VALUE processor;
 } vad_t;
 
-static void vad_free(void *p) {
-  vad_t *s = (vad_t *)p;
-  aic_vad_context_destroy(s->handle);
-  xfree(s);
+static void vad_free(void *ptr) {
+  vad_t *data = (vad_t *)ptr;
+  aic_vad_context_destroy(data->handle);
+  xfree(data);
 }
-static void vad_mark(void *p) { rb_gc_mark(((vad_t *)p)->processor); }
-static size_t vad_memsize(const void *p) { (void)p; return sizeof(vad_t); }
+static void vad_mark(void *ptr) { rb_gc_mark(((vad_t *)ptr)->processor); }
+static size_t vad_memsize(const void *ptr) { (void)ptr; return sizeof(vad_t); }
 static const rb_data_type_t vad_type = {
   "Aicoustics::VadContext",
   { vad_mark, vad_free, vad_memsize },
@@ -299,17 +299,17 @@ static const rb_data_type_t vad_type = {
 };
 
 static struct AicVadContext *vad_ptr(VALUE self) {
-  vad_t *s;
-  TypedData_Get_Struct(self, vad_t, &vad_type, s);
-  if (!s->handle) rb_raise(rb_eRuntimeError, "Aicoustics::VadContext handle is null");
-  return s->handle;
+  vad_t *data;
+  TypedData_Get_Struct(self, vad_t, &vad_type, data);
+  if (!data->handle) rb_raise(rb_eRuntimeError, "Aicoustics::VadContext handle is null");
+  return data->handle;
 }
 
 static enum AicVadParameter vad_param(VALUE name) {
-  ID id = SYM2ID(rb_to_symbol(name));
-  if (id == rb_intern("speech_hold_duration")) return AIC_VAD_PARAMETER_SPEECH_HOLD_DURATION;
-  if (id == rb_intern("sensitivity")) return AIC_VAD_PARAMETER_SENSITIVITY;
-  if (id == rb_intern("minimum_speech_duration")) return AIC_VAD_PARAMETER_MINIMUM_SPEECH_DURATION;
+  ID param_id = SYM2ID(rb_to_symbol(name));
+  if (param_id == rb_intern("speech_hold_duration")) return AIC_VAD_PARAMETER_SPEECH_HOLD_DURATION;
+  if (param_id == rb_intern("sensitivity")) return AIC_VAD_PARAMETER_SENSITIVITY;
+  if (param_id == rb_intern("minimum_speech_duration")) return AIC_VAD_PARAMETER_MINIMUM_SPEECH_DURATION;
   rb_raise(rb_eArgError, "unknown VAD parameter: %" PRIsVALUE, name);
 }
 
@@ -318,12 +318,12 @@ static VALUE processor_vad(VALUE self) {
   VALUE existing = rb_ivar_get(self, rb_intern("@vad"));
   if (!NIL_P(existing)) return existing;
 
-  struct AicVadContext *h = NULL;
-  aic_check(aic_vad_context_create(&h, processor_ptr(self)));
-  vad_t *s = ALLOC(vad_t);
-  s->handle = h;
-  s->processor = self;
-  VALUE obj = TypedData_Wrap_Struct(cVadContext, &vad_type, s);
+  struct AicVadContext *handle = NULL;
+  aic_check(aic_vad_context_create(&handle, processor_ptr(self)));
+  vad_t *data = ALLOC(vad_t);
+  data->handle = handle;
+  data->processor = self;
+  VALUE obj = TypedData_Wrap_Struct(cVadContext, &vad_type, data);
   rb_ivar_set(obj, rb_intern("@processor"), self);
   rb_ivar_set(self, rb_intern("@vad"), obj);
   return obj;
@@ -339,9 +339,9 @@ static VALUE vad_set_parameter(VALUE self, VALUE param, VALUE value) {
   return value;
 }
 static VALUE vad_get_parameter(VALUE self, VALUE param) {
-  float out = 0.0f;
-  aic_check(aic_vad_context_get_parameter(vad_ptr(self), vad_param(param), &out));
-  return DBL2NUM((double)out);
+  float value = 0.0f;
+  aic_check(aic_vad_context_get_parameter(vad_ptr(self), vad_param(param), &value));
+  return DBL2NUM((double)value);
 }
 
 void init_processor(void) {

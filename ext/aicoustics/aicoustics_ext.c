@@ -56,9 +56,9 @@ void aic_check(enum AicErrorCode code) {
 
 size_t ivar_sizet(VALUE self, const char *name, VALUE override) {
   if (!NIL_P(override)) return NUM2SIZET(override);
-  VALUE v = rb_ivar_get(self, rb_intern(name));
-  if (NIL_P(v)) rb_raise(rb_eRuntimeError, "not configured; call #configure first");
-  return NUM2SIZET(v);
+  VALUE value = rb_ivar_get(self, rb_intern(name));
+  if (NIL_P(value)) rb_raise(rb_eRuntimeError, "not configured; call #configure first");
+  return NUM2SIZET(value);
 }
 
 /* ---- module-level --------------------------------------------------- */
