@@ -120,6 +120,21 @@ static void *do_process_sequential(void *arg) {
   return NULL;
 }
 
+/* planar takes a float*-per-channel array, so it needs its own GVL-released bundle */
+typedef struct {
+  struct AicProcessor *proc;
+  float **planes;
+  uint16_t num_channels;
+  size_t num_frames;
+  enum AicErrorCode rc;
+} planar_args;
+
+static void *do_process_planar(void *arg) {
+  planar_args *args = (planar_args *)arg;
+  args->rc = aic_processor_process_planar(args->proc, args->planes, args->num_channels, args->num_frames);
+  return NULL;
+}
+
 /* shared body for interleaved/sequential: mutate the binary float32 String in place */
 static VALUE processor_process_single(int argc, VALUE *argv, VALUE self,
                                       void *(*process_fn)(void *)) {
@@ -128,17 +143,18 @@ static VALUE processor_process_single(int argc, VALUE *argv, VALUE self,
   if (NIL_P(opts)) opts = rb_hash_new();
   size_t num_frames = ivar_sizet(self, "@num_frames", rb_hash_aref(opts, ID2SYM(rb_intern("num_frames"))));
   size_t num_channels = ivar_sizet(self, "@num_channels", rb_hash_aref(opts, ID2SYM(rb_intern("num_channels"))));
+  uint16_t channels = checked_channels(num_channels);
+  size_t expected = checked_sample_count(num_frames, num_channels) * sizeof(float);
 
   StringValue(buffer);
   rb_str_modify(buffer);
-  size_t expected = num_frames * num_channels * sizeof(float);
   if ((size_t)RSTRING_LEN(buffer) != expected) {
     rb_raise(rb_eArgError, "buffer is %ld bytes, expected %zu (num_frames*num_channels*4)",
              RSTRING_LEN(buffer), expected);
   }
 
   process_args args = { processor_ptr(self), (float *)RSTRING_PTR(buffer),
-                        (uint16_t)num_channels, num_frames, AIC_ERROR_CODE_SUCCESS };
+                        channels, num_frames, AIC_ERROR_CODE_SUCCESS };
   rb_thread_call_without_gvl(process_fn, &args, RUBY_UBF_IO, NULL);
   aic_check(args.rc);
   return buffer;
@@ -158,25 +174,26 @@ static VALUE processor_process_planar(int argc, VALUE *argv, VALUE self) {
   if (NIL_P(opts)) opts = rb_hash_new();
   Check_Type(buffers, T_ARRAY);
   size_t num_frames = ivar_sizet(self, "@num_frames", rb_hash_aref(opts, ID2SYM(rb_intern("num_frames"))));
-  long num_channels = RARRAY_LEN(buffers);
+  uint16_t channels = checked_channels((size_t)RARRAY_LEN(buffers));
+  size_t expected = checked_sample_count(num_frames, 1) * sizeof(float); /* per-channel byte length */
 
   VALUE tmp_buffer;
-  float **planes = (float **)rb_alloc_tmp_buffer(&tmp_buffer, sizeof(float *) * num_channels);
-  for (long channel = 0; channel < num_channels; channel++) {
+  float **planes = (float **)rb_alloc_tmp_buffer(&tmp_buffer, sizeof(float *) * channels);
+  for (uint16_t channel = 0; channel < channels; channel++) {
     VALUE channel_buffer = rb_ary_entry(buffers, channel);
     StringValue(channel_buffer);
     rb_str_modify(channel_buffer);
-    if ((size_t)RSTRING_LEN(channel_buffer) != num_frames * sizeof(float)) {
+    if ((size_t)RSTRING_LEN(channel_buffer) != expected) {
       rb_free_tmp_buffer(&tmp_buffer);
-      rb_raise(rb_eArgError, "channel %ld buffer is %ld bytes, expected %zu",
-               channel, RSTRING_LEN(channel_buffer), num_frames * sizeof(float));
+      rb_raise(rb_eArgError, "channel %u buffer is %ld bytes, expected %zu",
+               channel, RSTRING_LEN(channel_buffer), expected);
     }
     planes[channel] = (float *)RSTRING_PTR(channel_buffer);
   }
-  enum AicErrorCode rc = aic_processor_process_planar(processor_ptr(self), planes,
-                                                      (uint16_t)num_channels, num_frames);
+  planar_args args = { processor_ptr(self), planes, channels, num_frames, AIC_ERROR_CODE_SUCCESS };
+  rb_thread_call_without_gvl(do_process_planar, &args, RUBY_UBF_IO, NULL);
   rb_free_tmp_buffer(&tmp_buffer);
-  aic_check(rc);
+  aic_check(args.rc);
   return buffers;
 }
 
@@ -185,7 +202,8 @@ static VALUE processor_process(VALUE self, VALUE floats) {
   Check_Type(floats, T_ARRAY);
   size_t num_frames = ivar_sizet(self, "@num_frames", Qnil);
   size_t num_channels = ivar_sizet(self, "@num_channels", Qnil);
-  size_t sample_count = num_frames * num_channels;
+  uint16_t channels = checked_channels(num_channels);
+  size_t sample_count = checked_sample_count(num_frames, num_channels);
   if ((size_t)RARRAY_LEN(floats) != sample_count) {
     rb_raise(rb_eArgError, "expected %zu samples, got %ld", sample_count, RARRAY_LEN(floats));
   }
@@ -194,7 +212,7 @@ static VALUE processor_process(VALUE self, VALUE floats) {
   float *audio = (float *)rb_alloc_tmp_buffer(&tmp_buffer, sizeof(float) * sample_count);
   for (size_t i = 0; i < sample_count; i++) audio[i] = (float)NUM2DBL(rb_ary_entry(floats, i));
 
-  process_args args = { processor_ptr(self), audio, (uint16_t)num_channels, num_frames,
+  process_args args = { processor_ptr(self), audio, channels, num_frames,
                         AIC_ERROR_CODE_SUCCESS };
   rb_thread_call_without_gvl(do_process_interleaved, &args, RUBY_UBF_IO, NULL);
   if (args.rc != AIC_ERROR_CODE_SUCCESS) { rb_free_tmp_buffer(&tmp_buffer); aic_check(args.rc); }

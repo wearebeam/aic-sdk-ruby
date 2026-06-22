@@ -61,6 +61,24 @@ size_t ivar_sizet(VALUE self, const char *name, VALUE override) {
   return NUM2SIZET(value);
 }
 
+uint16_t checked_channels(size_t num_channels) {
+  if (num_channels == 0 || num_channels > UINT16_MAX) {
+    rb_raise(rb_eArgError, "num_channels must be between 1 and %u", (unsigned)UINT16_MAX);
+  }
+  return (uint16_t)num_channels;
+}
+
+size_t checked_sample_count(size_t num_frames, size_t num_channels) {
+  if (num_frames != 0 && num_channels > SIZE_MAX / num_frames) {
+    rb_raise(rb_eArgError, "num_frames * num_channels overflows size_t");
+  }
+  size_t count = num_frames * num_channels;
+  if (count > SIZE_MAX / sizeof(float)) {
+    rb_raise(rb_eArgError, "buffer byte size overflows size_t");
+  }
+  return count;
+}
+
 /* ---- module-level --------------------------------------------------- */
 
 static VALUE m_sdk_version(VALUE self) { (void)self; return rb_utf8_str_new_cstr(aic_get_sdk_version()); }

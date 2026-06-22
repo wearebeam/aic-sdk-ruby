@@ -27,6 +27,12 @@ struct AicModel *model_ptr(VALUE self);
 /* Read a size_t config ivar (e.g. "@num_frames"), or use override when non-nil. */
 size_t ivar_sizet(VALUE self, const char *name, VALUE override);
 
+/* Validate a channel count fits the SDK's uint16_t (1..UINT16_MAX); raises ArgError otherwise. */
+uint16_t checked_channels(size_t num_channels);
+
+/* num_frames * num_channels, guarded so neither it nor (*sizeof(float)) overflows size_t. */
+size_t checked_sample_count(size_t num_frames, size_t num_channels);
+
 /* Per-type class registration, called from Init_aicoustics_ext. */
 void init_model(void);
 void init_processor(void); /* Processor + ProcessorContext + VadContext */

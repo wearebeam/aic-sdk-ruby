@@ -32,8 +32,15 @@ static analyzer_t *analyzer_state(VALUE self) {
 static VALUE analyzer_create(VALUE klass, VALUE model, VALUE license_key) {
   struct AicCollector *collector = NULL;
   struct AicAnalyzer *analyzer = NULL;
-  aic_check(aic_analyzer_pair_create(&collector, &analyzer, model_ptr(model),
-                                     StringValueCStr(license_key)));
+  enum AicErrorCode rc = aic_analyzer_pair_create(&collector, &analyzer, model_ptr(model),
+                                                  StringValueCStr(license_key));
+  if (rc != AIC_ERROR_CODE_SUCCESS) {
+    /* destroy whichever handle was created before raising, so we don't leak it */
+    if (collector) aic_collector_destroy(collector);
+    if (analyzer) aic_analyzer_destroy(analyzer);
+    aic_check(rc);
+  }
+
   analyzer_t *data = ALLOC(analyzer_t);
   data->collector = collector;
   data->analyzer = analyzer;
@@ -77,14 +84,15 @@ static VALUE analyzer_buffer(int argc, VALUE *argv, VALUE self,
   if (NIL_P(opts)) opts = rb_hash_new();
   size_t num_frames = ivar_sizet(self, "@num_frames", rb_hash_aref(opts, ID2SYM(rb_intern("num_frames"))));
   size_t num_channels = ivar_sizet(self, "@num_channels", rb_hash_aref(opts, ID2SYM(rb_intern("num_channels"))));
+  uint16_t channels = checked_channels(num_channels);
+  size_t expected = checked_sample_count(num_frames, num_channels) * sizeof(float);
 
   StringValue(buffer);
-  size_t expected = num_frames * num_channels * sizeof(float);
   if ((size_t)RSTRING_LEN(buffer) != expected) {
     rb_raise(rb_eArgError, "buffer is %ld bytes, expected %zu", RSTRING_LEN(buffer), expected);
   }
   aic_check(buffer_fn(analyzer_state(self)->collector, (const float *)RSTRING_PTR(buffer),
-                      (uint16_t)num_channels, num_frames));
+                      channels, num_frames));
   return self;
 }
 static VALUE analyzer_buffer_interleaved(int argc, VALUE *argv, VALUE self) {
