@@ -1,12 +1,14 @@
 # aicoustics
 
-Ruby FFI bindings for the [ai-coustics SDK](https://github.com/ai-coustics/aic-sdk-c)
+Native C extension bindings for the [ai-coustics SDK](https://github.com/ai-coustics/aic-sdk-c)
 (`v0.20.0`) — **speech enhancement**, **voice activity detection**, and the **Tyto**
 audio-quality analyzer, for running ai-coustics audio processing server-side from Ruby.
 
 This is a thin, faithful wrapper over the vendored native library (the same core the
-official `@ai-coustics/aic-sdk-wasm`, `aic-sdk-py`, and `aic-sdk-rs` packages wrap). No
-compilation step — it loads the prebuilt `libaic.{so,dylib}` via `ffi` at runtime.
+official `@ai-coustics/aic-sdk-wasm`, `aic-sdk-py`, and `aic-sdk-rs` packages wrap). It is a
+compiled C extension that links the prebuilt `libaic.{so,dylib}` at build time and loads it
+via an rpath at runtime (no FFI, no runtime gem dependencies). The heavy `process` calls
+release the GVL so audio crunching runs in parallel.
 
 > Validated on `aarch64-darwin` (Ruby 3.4.7): library load, version/VAD/error paths, PCM
 > conversion, and real v5 model loading. Enhancement/VAD processing requires a license key
@@ -19,24 +21,28 @@ ai-coustics' own bindings (`aic-sdk-rs`, `aic-sdk-py`, …), which download or w
 them. The `LICENSE.AIC-SDK` §2 forbids redistributing the SDK via a public repo separate
 from an application, so this repo holds the Apache-2.0 wrapper source only.
 
-After cloning, fetch the binaries from ai-coustics' official releases (requires `gh`):
+After cloning, fetch the binaries from ai-coustics' official releases (requires `gh`), then
+compile the extension (needs a C toolchain — `cc`/`clang` and `make`):
 
 ```bash
-rake vendor:fetch            # downloads libaic for all 4 platforms into vendor/aic/
-bundle exec rspec            # offline specs pass without a license
+rake vendor:fetch            # downloads libaic + aic.h for all 4 platforms into vendor/aic/
+bundle exec rake compile     # builds the C extension against the vendored libaic
+bundle exec rspec            # offline specs pass without a license (rake spec compiles first)
 ```
 
 Add it to your app by git or path:
 
 ```ruby
 # Gemfile
-gem "aicoustics", git: "https://github.com/jjholmes927/aic-sdk-ruby.git"
+gem "aicoustics", git: "https://github.com/wearebeam/aic-sdk-ruby.git"
 # or local: gem "aicoustics", path: "../aicoustics"
 ```
 
-`ffi` is the only runtime dependency (often already present in a Ruby app's bundle).
-Build a deployable `.gem` (with binaries bundled, for private/internal use only) by
-running `rake vendor:fetch` before `gem build` — never `gem push` to a public registry.
+There are **no runtime gem dependencies** — the extension links `libaic` directly. Building
+from git/path compiles the extension on `bundle install`. Build a deployable `.gem` (with
+binaries bundled, for private/internal use only) by running `rake vendor:fetch` before
+`gem build` — never `gem push` to a public registry. For zero-toolchain deploys, build
+precompiled per-platform gems with `rake-compiler-dock`.
 
 ## Quick start
 
@@ -86,7 +92,7 @@ vad.speech_detected?                             # call after processing a frame
 # Tyto audio-quality analyzer (needs a Tyto analysis model, not an enhancement model)
 analyzer = Aicoustics::Analyzer.create(tyto_model, license_key)
 analyzer.configure(sample_rate: 16_000, num_channels: 1)
-analyzer.buffer_interleaved!(float_buffer)
+analyzer.buffer_interleaved!(floats.pack("f*"))  # interleaved float32 binary String
 analyzer.analyze                                 # => AnalysisResult(risk_score:, noise:, ...)
 ```
 
@@ -102,7 +108,7 @@ each carrying `#code`.
   (validated). Models below the SDK's compatible version are rejected at load.
 - Optimal frame size is **model-dependent** (this model is 240 samples / 15 ms at 16 kHz).
   Always read `model.optimal_num_frames(rate)` — do not hardcode.
-- `rake "model:fetch[URL=...]"` downloads a model for local dev (gitignored).
+- `URL=... rake model:fetch` downloads a model for local dev (gitignored).
 
 ## Deployment notes
 
@@ -124,8 +130,9 @@ Vendored under `vendor/aic/<sdk-version>/<arch>-<os>/`:
 | x86_64 | `libaic.so` | `libaic.dylib` |
 | aarch64 | `libaic.so` | `libaic.dylib` |
 
-Override the resolved path with `AIC_SDK_LIB_PATH`. Bump the bundled SDK with
-`rake "vendor:fetch[VERSION=0.21.0]"` (requires `gh`), then update
+The extension links the lib for the current platform via an rpath baked at build time
+(`@loader_path`/`$ORIGIN` relative to the vendored dir, so the gem is relocatable). Bump the
+bundled SDK with `VERSION=0.21.0 rake vendor:fetch` (requires `gh`), recompile, then update
 `Aicoustics::SDK_VERSION`.
 
 ## Testing

@@ -68,7 +68,7 @@ RSpec.describe "ai-coustics SDK integration" do
     it "produces an analysis result with all scores populated" do
       analyzer = described_class.create(model, SpecSupport.license_key)
       analyzer.configure(sample_rate: 16_000, num_channels: 1)
-      buffer = FFI::MemoryPointer.new(:float, analyzer.num_frames)
+      buffer = Array.new(analyzer.num_frames, 0.0).pack("f*") # interleaved float32 frame
       analyzer.buffer_interleaved!(buffer)
       result = analyzer.analyze
       expect(result.to_h.keys).to match_array(Aicoustics::AnalysisResult::ATTRIBUTES)

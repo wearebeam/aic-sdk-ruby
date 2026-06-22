@@ -1,8 +1,15 @@
 # frozen_string_literal: true
 
 require "rspec/core/rake_task"
+require "rake/extensiontask"
+
+Rake::ExtensionTask.new("aicoustics_ext") do |ext|
+  ext.ext_dir = "ext/aicoustics"
+  ext.lib_dir = "lib/aicoustics" # dev build lands at lib/aicoustics/aicoustics_ext.<ext>
+end
 
 RSpec::Core::RakeTask.new(:spec)
+task spec: :compile
 task default: :spec
 
 PLATFORMS = {

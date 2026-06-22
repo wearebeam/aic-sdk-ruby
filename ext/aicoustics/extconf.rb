@@ -39,11 +39,21 @@ find_header("aic.h", include_dir) || abort("aicoustics: cannot use aic.h")
 find_library("aic", "aic_get_sdk_version", lib_dir) || abort("aicoustics: cannot link libaic")
 
 # Runtime lookup: libaic's install name is @rpath/libaic.dylib (and the .so is unqualified),
-# so the extension needs an rpath pointing at the vendored lib dir.
+# so the extension needs an rpath that resolves to the vendored lib dir.
 #
-# VERTICAL SLICE: absolute rpath — robust, dev-only. For a shipped gem, swap this for a
-# loader-relative rpath (@loader_path on macOS, $ORIGIN on Linux) computed from where the
-# compiled ext installs relative to vendor/, so the gem stays relocatable.
+# The compiled ext installs at lib/aicoustics/aicoustics_ext.{bundle,so}; the vendored libs
+# sit at vendor/aic/<version>/<slug>/ — i.e. ../../vendor/aic/<version>/<slug> relative to the
+# ext's directory. A loader-relative rpath keeps the gem relocatable (works wherever installed).
+rel = "../../vendor/aic/#{version}/#{slug}"
+if os_token == "darwin"
+  $LDFLAGS << " -Wl,-rpath,@loader_path/#{rel}"
+else
+  # $ORIGIN must reach the linker literally: escape $ for make, quote for the shell.
+  $LDFLAGS << " -Wl,-rpath,'$$ORIGIN/#{rel}'"
+end
+
+# Absolute rpath to the build-time vendored dir as a dev fallback (harmless in a shipped gem;
+# simply won't resolve on another machine, where the relative rpath above takes over).
 $LDFLAGS << " -Wl,-rpath,#{lib_dir}"
 
-create_makefile("aicoustics/aicoustics_ext")
+create_makefile("aicoustics_ext")

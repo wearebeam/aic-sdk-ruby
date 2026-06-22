@@ -5,12 +5,13 @@ require_relative "lib/aicoustics/version"
 Gem::Specification.new do |spec|
   spec.name = "aicoustics"
   spec.version = Aicoustics::VERSION
-  spec.authors = ["jjholmes927"]
+  spec.authors = ["wearebeam"]
 
-  spec.summary = "Ruby FFI bindings for the ai-coustics speech enhancement SDK (v#{Aicoustics::SDK_VERSION})"
+  spec.summary = "Native C bindings for the ai-coustics speech enhancement SDK (v#{Aicoustics::SDK_VERSION})"
   spec.description = "Server-side Ruby bindings for the ai-coustics SDK: speech enhancement, " \
-    "voice activity detection, and the Tyto audio-quality analyzer, over the vendored native library."
-  spec.homepage = "https://github.com/jjholmes927/aic-sdk-ruby"
+    "voice activity detection, and the Tyto audio-quality analyzer, as a native C extension " \
+    "over the vendored native library."
+  spec.homepage = "https://github.com/wearebeam/aic-sdk-ruby"
   spec.license = "Apache-2.0"
   spec.required_ruby_version = ">= 3.1"
 
@@ -21,9 +22,11 @@ Gem::Specification.new do |spec|
   }
 
   spec.files = Dir.glob("lib/**/*.rb") +
+    Dir.glob("ext/**/*.{c,h,rb}") +
     Dir.glob("vendor/**/*").select { |path| File.file?(path) } +
     %w[README.md LICENSE aicoustics.gemspec]
   spec.require_paths = ["lib"]
+  spec.extensions = ["ext/aicoustics/extconf.rb"]
 
-  spec.add_dependency "ffi", ">= 1.15"
+  spec.add_development_dependency "rake-compiler", "~> 1.2"
 end

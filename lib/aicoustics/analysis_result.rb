@@ -14,8 +14,9 @@ module Aicoustics
 
     attr_reader(*ATTRIBUTES)
 
-    def self.from_native(struct)
-      new(**ATTRIBUTES.to_h { |name| [name, struct[name]] })
+    # Build from a hash of attribute => value (used by the C extension's #analyze).
+    def self.from_h(hash)
+      new(**ATTRIBUTES.to_h { |name| [name, hash[name]] })
     end
 
     def initialize(**values)
