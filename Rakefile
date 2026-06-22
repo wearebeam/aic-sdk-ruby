@@ -26,6 +26,7 @@ namespace :vendor do
       asset = "aic-sdk-#{info[:asset]}-#{version}.tar.gz"
       dest_dir = File.join(__dir__, "vendor", "aic", version, slug)
       FileUtils.mkdir_p(dest_dir)
+      FileUtils.mkdir_p(File.join(__dir__, "vendor", "aic", "include"))
 
       Dir.mktmpdir do |tmp|
         sh "gh release download #{version} -R #{repo} -p #{asset} -D #{tmp} --clobber"

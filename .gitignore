@@ -5,6 +5,14 @@
 Gemfile.lock
 *.gem
 
+# C extension build artifacts
+*.o
+*.bundle
+*.so
+*.dSYM/
+ext/**/Makefile
+ext/**/mkmf.log
+
 vendor/aic/**/*.so
 vendor/aic/**/*.dylib
 vendor/aic/**/*.dll
