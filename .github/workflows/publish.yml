@@ -1,0 +1,39 @@
+name: Publish
+
+# Manual for now — trigger from the Actions tab. Later this will move to
+# "on: push of a version tag" / merge to main.
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: build & push to GitHub Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # lets the built-in GITHUB_TOKEN publish the package
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      # The published gem carries only the Apache wrapper + ext sources; the
+      # libaic binary is fetched at the consumer's install time (extconf.rb),
+      # so no compile/download is needed to package it.
+      - name: Build gem
+        run: gem build aicoustics.gemspec
+
+      - name: Push to GitHub Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          mkdir -p ~/.gem
+          printf -- "---\n:github: Bearer ${GITHUB_TOKEN}\n" > ~/.gem/credentials
+          chmod 600 ~/.gem/credentials
+          gem push --key github \
+            --host "https://rubygems.pkg.github.com/${OWNER}" \
+            aicoustics-*.gem

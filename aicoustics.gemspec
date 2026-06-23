@@ -16,7 +16,8 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 3.1"
 
   spec.metadata = {
-    "allowed_push_host" => "https://gems.internal.invalid",
+    "allowed_push_host" => "https://rubygems.pkg.github.com/wearebeam",
+    "github_repo" => "ssh://github.com/wearebeam/aic-sdk-ruby",
     "rubygems_mfa_required" => "true",
     "source_code_uri" => spec.homepage
   }
