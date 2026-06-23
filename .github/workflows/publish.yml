@@ -4,6 +4,10 @@ name: Publish
 # "on: push of a version tag" / merge to main.
 on:
   workflow_dispatch:
+  # TEMPORARY: trigger on push to the INT-516 branch so we can test publishing
+  # before merging. Remove this block before merge.
+  push:
+    branches: [int-516-publish-the-aicoustics-gem-to-github-packages-for-clean]
 
 jobs:
   publish:
