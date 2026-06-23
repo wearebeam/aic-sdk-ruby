@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
-# Shared plumbing for the examples: .env loading and WAV <-> PCM conversion, so the
-# example scripts can focus on the ai-coustics SDK rather than file wrangling.
+require "rbconfig"
+require "fileutils"
+
+# Plumbing for the examples (.env, WAV<->PCM, playback) so the demos themselves
+# can stay focused on the ai-coustics SDK.
 module Support
   module_function
 
@@ -17,8 +20,8 @@ module Support
     end
   end
 
-  # filename -> [mono 16-bit little-endian PCM (String), sample_rate (Integer)].
-  # Stereo is downmixed to mono; aborts on anything that isn't 16-bit PCM WAV.
+  # filename -> [mono 16-bit little-endian PCM (String), sample_rate]. Stereo is
+  # downmixed; aborts on anything that isn't 16-bit PCM WAV.
   def read_wav_mono(path)
     bytes = File.binread(path)
     abort "#{path}: not a WAVE file" unless bytes.byteslice(0, 4) == "RIFF" && bytes.byteslice(8, 4) == "WAVE"
@@ -42,26 +45,29 @@ module Support
     abort "#{path}: need 16-bit PCM (convert: ffmpeg -i in -ac 1 -ar 16000 -c:a pcm_s16le out.wav)" \
       unless fmt && data && fmt[:audio_format] == 1 && fmt[:bits] == 16
 
-    pcm =
-      if fmt[:channels] > 1
-        data.unpack("s<*").each_slice(fmt[:channels]).map { |frame| frame.sum / fmt[:channels] }.pack("s<*")
-      else
-        data
-      end
+    pcm = fmt[:channels] > 1 ? data.unpack("s<*").each_slice(fmt[:channels]).map { |f| f.sum / fmt[:channels] }.pack("s<*") : data
     [pcm, fmt[:sample_rate]]
   end
 
-  # Write mono 16-bit little-endian PCM out as a .wav file.
+  # Write mono 16-bit little-endian PCM out as a .wav (creates the directory).
   def write_wav(path, pcm_s16le, sample_rate)
-    channels = 1
-    bits = 16
-    byte_rate = sample_rate * channels * bits / 8
-    block_align = channels * bits / 8
+    FileUtils.mkdir_p(File.dirname(path))
     header = [
       "RIFF", 36 + pcm_s16le.bytesize, "WAVE",
-      "fmt ", 16, 1, channels, sample_rate, byte_rate, block_align, bits,
+      "fmt ", 16, 1, 1, sample_rate, sample_rate * 2, 2, 16,
       "data", pcm_s16le.bytesize
     ].pack("a4Va4 a4VvvVVvv a4V")
     File.binwrite(path, header + pcm_s16le)
+  end
+
+  # Play a .wav file (afplay on macOS, ffplay/aplay on Linux).
+  def play(path)
+    if RbConfig::CONFIG["host_os"] =~ /darwin/
+      system("afplay", path)
+    elsif system("command -v ffplay > /dev/null 2>&1")
+      system("ffplay", "-autoexit", "-nodisp", "-loglevel", "quiet", path)
+    else
+      system("aplay", "-q", path)
+    end
   end
 end
