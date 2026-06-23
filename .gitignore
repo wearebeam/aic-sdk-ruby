@@ -13,6 +13,10 @@ Gemfile.lock
 ext/**/Makefile
 ext/**/mkmf.log
 
+# Example secrets / generated audio
+examples/.env
+examples/output/
+
 vendor/aic/**/*.so
 vendor/aic/**/*.dylib
 vendor/aic/**/*.dll
