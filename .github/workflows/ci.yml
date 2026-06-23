@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: build & spec (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-latest → x86_64-linux, macos-latest → aarch64-darwin.
+        # Both exercise extconf's fresh download of the platform's libaic.
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the Ruby version from .ruby-version; caches gems only (not the
+      # vendored SDK), so every run compiles fresh and extconf re-downloads
+      # libaic from the public ai-coustics release.
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      # `rake` is `compile` (runs extconf → SdkFetcher.ensure! → download +
+      # checksum verify → build the native ext) then `spec`.
+      - name: Compile (fresh fetch) and run specs
+        run: bundle exec rake
