@@ -42,24 +42,19 @@ module Aicoustics
       input_samples = Pcm.s16le_to_floats(pcm_s16le)
       input_length = input_samples.length
 
-      buffer = FFI::MemoryPointer.new(:float, frame_samples)
       zero_frame = Array.new(frame_samples, 0.0)
       enhanced = []
       speech_flags = vad ? [] : nil
 
       input_samples.each_slice(frame_samples) do |slice|
         slice += Array.new(frame_samples - slice.length, 0.0) if slice.length < frame_samples
-        buffer.write_array_of_float(slice)
-        processor.process_interleaved!(buffer)
-        enhanced.concat(buffer.read_array_of_float(frame_samples))
+        enhanced.concat(processor.process(slice))
         speech_flags << vad_context.speech_detected? if vad
       end
 
       flush_frames = output_delay.zero? ? 0 : ((output_delay + num_frames - 1) / num_frames)
       flush_frames.times do
-        buffer.write_array_of_float(zero_frame)
-        processor.process_interleaved!(buffer)
-        enhanced.concat(buffer.read_array_of_float(frame_samples))
+        enhanced.concat(processor.process(zero_frame))
         speech_flags << vad_context.speech_detected? if vad
       end
 
