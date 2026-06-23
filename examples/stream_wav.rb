@@ -16,15 +16,15 @@ fixtures = File.expand_path("../spec/fixtures", __dir__)
 pcm, rate = Support.read_wav_mono(ARGV.fetch(0))
 float_audio = Aicoustics::Pcm.s16le_to_floats(pcm).pack("e*") # int16 -> float32 once, up front
 
-processor = Aicoustics::Processor.create(Aicoustics::Model.from_file("#{fixtures}/model.aicmodel"), license)
-processor.configure(sample_rate: rate, num_channels: 1)
+enhancer = Aicoustics::Processor.create(Aicoustics::Model.from_file("#{fixtures}/model.aicmodel"), license)
+enhancer.configure(sample_rate: rate, num_channels: 1)
 analyzer = Aicoustics::Analyzer.create(Aicoustics::Model.from_file("#{fixtures}/tyto.aicmodel"), license)
 analyzer.configure(sample_rate: rate, num_channels: 1)
 
 # Each model consumes a fixed block of `num_frames` samples per call; as bytes (mono):
-enhance_block_bytes = processor.num_frames * FLOAT32_BYTES
+enhance_block_bytes = enhancer.num_frames * FLOAT32_BYTES
 analyze_block_bytes = analyzer.num_frames * FLOAT32_BYTES
-seconds_per_block   = processor.num_frames / rate.to_f
+seconds_per_block   = enhancer.num_frames / rate.to_f
 
 player = IO.popen(%W[ffplay -f f32le -ar #{rate} -ch_layout mono -nodisp -autoexit -loglevel quiet -i pipe:0], "wb")
 player.sync = true
@@ -55,12 +55,12 @@ started_at = clock.call
 
 float_audio.bytesize.fdiv(enhance_block_bytes).ceil.times do |i|
   block = +float_audio.byteslice(i * enhance_block_bytes, enhance_block_bytes).ljust(enhance_block_bytes, "\x00")
-  processor.process_interleaved!(block) # enhance in place — zero copy
+  enhancer.process_interleaved!(block) # enhance in place — zero copy
   player.write(block)                   # float32 bytes straight to ffplay
   to_analyze.push(block)                # same bytes feed Tyto
 
   current = scores_lock.synchronize { scores }
-  printf("\r[%5.1fs] %-7s | %s", i * seconds_per_block, processor.vad.speech_detected? ? "SPEECH" : "silence",
+  printf("\r[%5.1fs] %-7s | %s", i * seconds_per_block, enhancer.vad.speech_detected? ? "SPEECH" : "silence",
          current ? "risk %.2f  noise %.2f  reverb %.2f" % current.values_at(:risk_score, :noise, :speaker_reverb) : "")
 
   # keep ~0.4 s of audio buffered ahead of real time so playback stays smooth
