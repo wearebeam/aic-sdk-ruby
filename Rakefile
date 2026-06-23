@@ -15,22 +15,22 @@ task default: :spec
 namespace :vendor do
   desc "Download and vendor the native libaic libraries for all platforms (VERSION=0.20.0)"
   task :fetch do
-    require_relative "ext/aicoustics/aic_sdk"
+    require_relative "ext/aicoustics/sdk_fetcher"
     version = ENV.fetch("VERSION", Aicoustics::SDK_VERSION)
-    Aicoustics::AicSdk.fetch_all(version: version).each { |what| puts "vendored #{what}" }
+    Aicoustics::SdkFetcher.fetch_all(version: version).each { |what| puts "vendored #{what}" }
   end
 
-  desc "Print SHA256 checksums for every platform tarball (VERSION=0.20.0) to pin in aic_sdk.rb"
+  desc "Print SHA256 checksums for every platform tarball (VERSION=0.20.0) to pin in sdk_fetcher.rb"
   task :checksums do
-    require_relative "ext/aicoustics/aic_sdk"
+    require_relative "ext/aicoustics/sdk_fetcher"
     require "digest"
     require "tmpdir"
     version = ENV.fetch("VERSION", Aicoustics::SDK_VERSION)
     puts %(    "#{version}" => {)
-    Aicoustics::AicSdk::PLATFORMS.each_key do |slug|
+    Aicoustics::SdkFetcher::PLATFORMS.each_key do |slug|
       Dir.mktmpdir do |tmp|
         tarball = File.join(tmp, "aic-sdk.tar.gz")
-        Aicoustics::AicSdk.download(Aicoustics::AicSdk.asset_url(version, slug), tarball)
+        Aicoustics::SdkFetcher.download(Aicoustics::SdkFetcher.asset_url(version, slug), tarball)
         puts %(      "#{slug}" => "#{Digest::SHA256.file(tarball).hexdigest}",)
       end
     end

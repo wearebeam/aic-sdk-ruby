@@ -10,7 +10,9 @@ require "tmpdir"
 require_relative "../../lib/aicoustics/version"
 
 module Aicoustics
-  # Locates, downloads, and verifies the proprietary libaic native artifact.
+  # Install-time helper that locates, downloads, and verifies the proprietary
+  # libaic native artifact. This is build tooling, NOT part of the gem's runtime
+  # API — nothing here is loaded when the compiled extension runs.
   #
   # The artifact is published in the *public* ai-coustics/aic-sdk-c GitHub
   # releases and is freely downloadable, but its license forbids redistribution
@@ -18,7 +20,7 @@ module Aicoustics
   # Instead it is fetched at build time (extconf.rb) or on demand
   # (`rake vendor:fetch`). This module is the single source of truth for asset
   # names, on-disk layout, and checksums, shared by both callers.
-  module AicSdk
+  module SdkFetcher
     module_function
 
     REPO = "ai-coustics/aic-sdk-c"
