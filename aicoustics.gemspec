@@ -21,10 +21,13 @@ Gem::Specification.new do |spec|
     "source_code_uri" => spec.homepage
   }
 
+  # The proprietary libaic binary is license-restricted and MUST NOT be packaged:
+  # it is fetched from the public ai-coustics release at install time by
+  # ext/aicoustics/extconf.rb. The gem ships only the Apache-2.0 wrapper + the C
+  # extension sources, which compile against the fetched header and lib.
   spec.files = Dir.glob("lib/**/*.rb") +
     Dir.glob("ext/**/*.{c,h,rb}") +
-    Dir.glob("vendor/**/*").select { |path| File.file?(path) } +
-    %w[README.md LICENSE aicoustics.gemspec]
+    %w[README.md LICENSE LICENSE.AIC-SDK NOTICE aicoustics.gemspec]
   spec.require_paths = ["lib"]
   spec.extensions = ["ext/aicoustics/extconf.rb"]
 

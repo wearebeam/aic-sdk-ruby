@@ -12,38 +12,29 @@ RSpec::Core::RakeTask.new(:spec)
 task spec: :compile
 task default: :spec
 
-PLATFORMS = {
-  "aarch64-darwin" => { asset: "aarch64-apple-darwin", lib: "libaic.dylib" },
-  "x86_64-darwin" => { asset: "x86_64-apple-darwin", lib: "libaic.dylib" },
-  "aarch64-linux" => { asset: "aarch64-unknown-linux-gnu", lib: "libaic.so" },
-  "x86_64-linux" => { asset: "x86_64-unknown-linux-gnu", lib: "libaic.so" }
-}.freeze
-
 namespace :vendor do
   desc "Download and vendor the native libaic libraries for all platforms (VERSION=0.20.0)"
   task :fetch do
-    require_relative "lib/aicoustics/version"
+    require_relative "ext/aicoustics/aic_sdk"
     version = ENV.fetch("VERSION", Aicoustics::SDK_VERSION)
-    repo = "ai-coustics/aic-sdk-c"
+    Aicoustics::AicSdk.fetch_all(version: version).each { |what| puts "vendored #{what}" }
+  end
 
+  desc "Print SHA256 checksums for every platform tarball (VERSION=0.20.0) to pin in aic_sdk.rb"
+  task :checksums do
+    require_relative "ext/aicoustics/aic_sdk"
+    require "digest"
     require "tmpdir"
-    require "fileutils"
-
-    PLATFORMS.each do |slug, info|
-      asset = "aic-sdk-#{info[:asset]}-#{version}.tar.gz"
-      dest_dir = File.join(__dir__, "vendor", "aic", version, slug)
-      FileUtils.mkdir_p(dest_dir)
-      FileUtils.mkdir_p(File.join(__dir__, "vendor", "aic", "include"))
-
+    version = ENV.fetch("VERSION", Aicoustics::SDK_VERSION)
+    puts %(    "#{version}" => {)
+    Aicoustics::AicSdk::PLATFORMS.each_key do |slug|
       Dir.mktmpdir do |tmp|
-        sh "gh release download #{version} -R #{repo} -p #{asset} -D #{tmp} --clobber"
-        sh "tar xzf #{File.join(tmp, asset)} -C #{tmp}"
-        FileUtils.cp(File.join(tmp, "lib", info[:lib]), File.join(dest_dir, info[:lib]))
-        header_src = File.join(tmp, "include", "aic.h")
-        FileUtils.cp(header_src, File.join(__dir__, "vendor", "aic", "include", "aic.h")) if File.exist?(header_src)
+        tarball = File.join(tmp, "aic-sdk.tar.gz")
+        Aicoustics::AicSdk.download(Aicoustics::AicSdk.asset_url(version, slug), tarball)
+        puts %(      "#{slug}" => "#{Digest::SHA256.file(tarball).hexdigest}",)
       end
-      puts "vendored #{slug}/#{info[:lib]}"
     end
+    puts "    },"
   end
 end
 
