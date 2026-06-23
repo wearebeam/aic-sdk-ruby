@@ -4,10 +4,6 @@ name: Publish
 # "on: push of a version tag" / merge to main.
 on:
   workflow_dispatch:
-  # TEMPORARY: trigger on push to the INT-516 branch so we can test publishing
-  # before merging. Remove this block before merge.
-  push:
-    branches: [int-516-publish-the-aicoustics-gem-to-github-packages-for-clean]
 
 jobs:
   publish:
@@ -23,6 +19,24 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           bundler-cache: true
+
+      # Fail fast with a clear message if this version is already in the
+      # registry. gem push also rejects a duplicate version (the hard backstop),
+      # but this gives an actionable error before building. If the API read is
+      # unavailable it degrades to relying on gem push.
+      - name: Fail if this version is already published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          version=$(ruby -e 'require_relative "lib/aicoustics/version"; print Aicoustics::VERSION')
+          published=$(gh api "/orgs/${OWNER}/packages/rubygems/aicoustics/versions" \
+            --jq '.[].name' 2>/dev/null || true)
+          if printf '%s\n' "$published" | grep -qx "$version"; then
+            echo "::error::aicoustics ${version} is already published to GitHub Packages. Bump Aicoustics::VERSION before publishing."
+            exit 1
+          fi
+          echo "aicoustics ${version} not yet published — proceeding."
 
       # The published gem carries only the Apache wrapper + ext sources; the
       # libaic binary is fetched at the consumer's install time (extconf.rb),
