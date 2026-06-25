@@ -1,6 +1,7 @@
 /.bundle/
 /pkg/
 /tmp/
+/.idea/
 /spec/fixtures/*.aicmodel
 Gemfile.lock
 *.gem

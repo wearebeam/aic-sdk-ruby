@@ -21,28 +21,65 @@ ai-coustics' own bindings (`aic-sdk-rs`, `aic-sdk-py`, …), which download or w
 them. The `LICENSE.AIC-SDK` §2 forbids redistributing the SDK via a public repo separate
 from an application, so this repo holds the Apache-2.0 wrapper source only.
 
-After cloning, fetch the binaries from ai-coustics' official releases (requires `gh`), then
-compile the extension (needs a C toolchain — `cc`/`clang` and `make`):
+After cloning, fetch the binaries from ai-coustics' official releases (a plain HTTPS
+download — no auth or `gh` needed), then compile the extension (needs a C toolchain —
+`cc`/`clang` and `make`):
 
 ```bash
-rake vendor:fetch            # downloads libaic + aic.h for all 4 platforms into vendor/aic/
+rake vendor:fetch            # downloads + checksum-verifies libaic + aic.h for all 4 platforms
 bundle exec rake compile     # builds the C extension against the vendored libaic
 bundle exec rspec            # offline specs pass without a license (rake spec compiles first)
 ```
 
-Add it to your app by git or path:
+`rake vendor:fetch` is optional for a from-source checkout: if `libaic` isn't already
+vendored, `extconf.rb` downloads and checksum-verifies it for the current platform on
+`bundle install`. There are **no runtime gem dependencies** — the extension links `libaic`
+directly.
+
+For unreleased work you can point an app straight at the source:
 
 ```ruby
-# Gemfile
+# Gemfile — development only
 gem "aicoustics", git: "https://github.com/wearebeam/aic-sdk-ruby.git"
 # or local: gem "aicoustics", path: "../aicoustics"
 ```
 
-There are **no runtime gem dependencies** — the extension links `libaic` directly. Building
-from git/path compiles the extension on `bundle install`. Build a deployable `.gem` (with
-binaries bundled, for private/internal use only) by running `rake vendor:fetch` before
-`gem build` — never `gem push` to a public registry. For zero-toolchain deploys, build
-precompiled per-platform gems with `rake-compiler-dock`.
+## Using the published gem (GitHub Packages)
+
+Released versions are published to the org's **private** GitHub Packages RubyGems registry.
+The published gem contains **only** the Apache-2.0 wrapper and the C extension sources —
+never the proprietary `libaic`. That binary is fetched per platform at *your* `bundle
+install` time by `extconf.rb` (a plain HTTPS download from the public ai-coustics release,
+checksum-verified), so the build host needs a **C toolchain (`cc`/`clang`, `make`) and
+outbound network**.
+
+Point the app at the registry:
+
+```ruby
+# Gemfile
+source "https://rubygems.pkg.github.com/wearebeam" do
+  gem "aicoustics"
+end
+```
+
+Authenticate Bundler with a GitHub token that has `read:packages` (a PAT locally, or
+`secrets.GITHUB_TOKEN` in CI):
+
+```bash
+# local — writes to ~/.bundle/config
+bundle config set --global https://rubygems.pkg.github.com/wearebeam USERNAME:TOKEN
+
+# CI — env var, no file
+export BUNDLE_RUBYGEMS__PKG__GITHUB__COM=USERNAME:TOKEN
+```
+
+Then `bundle install` as usual.
+
+### Publishing a release
+
+Bump `Aicoustics::VERSION`, then run the **Publish** workflow (Actions tab → Run workflow).
+It builds the gem and pushes it with the built-in `GITHUB_TOKEN`; a guard fails the run if
+that version is already published.
 
 ## Quick start
 
@@ -131,9 +168,10 @@ Vendored under `vendor/aic/<sdk-version>/<arch>-<os>/`:
 | aarch64 | `libaic.so` | `libaic.dylib` |
 
 The extension links the lib for the current platform via an rpath baked at build time
-(`@loader_path`/`$ORIGIN` relative to the vendored dir, so the gem is relocatable). Bump the
-bundled SDK with `VERSION=0.21.0 rake vendor:fetch` (requires `gh`), recompile, then update
-`Aicoustics::SDK_VERSION`.
+(`@loader_path`/`$ORIGIN` relative to the vendored dir, so the gem is relocatable). To bump
+the bundled SDK: update `Aicoustics::SDK_VERSION`, regenerate the pinned checksums with
+`VERSION=0.21.0 rake vendor:checksums` (paste them into `ext/aicoustics/sdk_fetcher.rb`),
+then `rake vendor:fetch` and recompile.
 
 ## Testing
 
