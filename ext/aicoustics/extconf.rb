@@ -27,15 +27,22 @@ find_library("aic", "aic_get_sdk_version", lib_dir) || abort("aicoustics: cannot
 # Runtime lookup: libaic's install name is @rpath/libaic.dylib (and the .so is unqualified),
 # so the extension needs an rpath that resolves to the vendored lib dir.
 #
-# The compiled ext installs at lib/aicoustics/aicoustics_ext.{bundle,so}; the vendored libs
-# sit at vendor/aic/<version>/<slug>/ — i.e. ../../vendor/aic/<version>/<slug> relative to the
-# ext's directory. A loader-relative rpath keeps the gem relocatable (works wherever installed).
-rel = "../../vendor/aic/#{version}/#{slug}"
-if Aicoustics::SdkFetcher.os_token == "darwin"
-  $LDFLAGS << " -Wl,-rpath,@loader_path/#{rel}"
-else
-  # $ORIGIN must reach the linker literally: escape $ for make, quote for the shell.
-  $LDFLAGS << " -Wl,-rpath,'$$ORIGIN/#{rel}'"
+# The compiled ext lands at a different depth depending on how it was built, and the
+# vendored libs always sit at <gem>/vendor/aic/<version>/<slug>/:
+#   - `gem install` / bundle:   lib/aicoustics_ext.{bundle,so}           -> ../vendor/aic
+#   - rake-compiler dev build:  lib/aicoustics/aicoustics_ext.{bundle,so} -> ../../vendor/aic
+# Bake a loader-relative rpath for BOTH depths so the gem is genuinely relocatable in either
+# layout. (Previously only ../../ was baked, so installed gems silently relied on the absolute
+# rpath below — which breaks on any deploy where the build dir differs from the run dir, e.g.
+# Heroku's ephemeral /tmp/build_*.)
+rels = ["../vendor/aic/#{version}/#{slug}", "../../vendor/aic/#{version}/#{slug}"]
+rels.each do |rel|
+  if Aicoustics::SdkFetcher.os_token == "darwin"
+    $LDFLAGS << " -Wl,-rpath,@loader_path/#{rel}"
+  else
+    # $ORIGIN must reach the linker literally: escape $ for make, quote for the shell.
+    $LDFLAGS << " -Wl,-rpath,'$$ORIGIN/#{rel}'"
+  end
 end
 
 # Absolute rpath to the build-time vendored dir as a dev fallback (harmless in a shipped gem;
