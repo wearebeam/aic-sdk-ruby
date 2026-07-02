@@ -1,4 +1,5 @@
 #include "aicoustics.h"
+#include <ruby/thread.h> /* rb_thread_call_without_gvl */
 #include <string.h> /* memset */
 
 /* Aicoustics::Analyzer — the Tyto collector + analyzer pair, wrapped together. */
@@ -77,6 +78,36 @@ static VALUE analyzer_configure(int argc, VALUE *argv, VALUE self) {
   return self;
 }
 
+/* GVL-released buffering + analysis (mirrors processor.c): Tyto inference holds a
+   core, and buffering runs per chunk on the audio pool lane — releasing the GVL
+   lets analyzer lanes run in parallel with each other and with Ruby threads. */
+typedef struct {
+  enum AicErrorCode (*buffer_fn)(struct AicCollector *, const float *, uint16_t, size_t);
+  struct AicCollector *collector;
+  const float *audio;
+  uint16_t num_channels;
+  size_t num_frames;
+  enum AicErrorCode rc;
+} buffer_args;
+
+static void *do_buffer(void *arg) {
+  buffer_args *args = (buffer_args *)arg;
+  args->rc = args->buffer_fn(args->collector, args->audio, args->num_channels, args->num_frames);
+  return NULL;
+}
+
+typedef struct {
+  struct AicAnalyzer *analyzer;
+  struct AicAnalysisResult *result;
+  enum AicErrorCode rc;
+} analyze_args;
+
+static void *do_analyze(void *arg) {
+  analyze_args *args = (analyze_args *)arg;
+  args->rc = aic_analyzer_analyze_buffered(args->analyzer, args->result);
+  return NULL;
+}
+
 static VALUE analyzer_buffer(int argc, VALUE *argv, VALUE self,
                              enum AicErrorCode (*buffer_fn)(struct AicCollector *, const float *, uint16_t, size_t)) {
   VALUE buffer, opts;
@@ -91,8 +122,11 @@ static VALUE analyzer_buffer(int argc, VALUE *argv, VALUE self,
   if ((size_t)RSTRING_LEN(buffer) != expected) {
     rb_raise(rb_eArgError, "buffer is %ld bytes, expected %zu", RSTRING_LEN(buffer), expected);
   }
-  aic_check(buffer_fn(analyzer_state(self)->collector, (const float *)RSTRING_PTR(buffer),
-                      channels, num_frames));
+  buffer_args args = { buffer_fn, analyzer_state(self)->collector,
+                       (const float *)RSTRING_PTR(buffer), channels, num_frames,
+                       AIC_ERROR_CODE_SUCCESS };
+  rb_thread_call_without_gvl(do_buffer, &args, RUBY_UBF_IO, NULL);
+  aic_check(args.rc);
   return self;
 }
 static VALUE analyzer_buffer_interleaved(int argc, VALUE *argv, VALUE self) {
@@ -105,7 +139,9 @@ static VALUE analyzer_buffer_sequential(int argc, VALUE *argv, VALUE self) {
 static VALUE analyzer_analyze(VALUE self) {
   struct AicAnalysisResult result;
   memset(&result, 0, sizeof(result));
-  aic_check(aic_analyzer_analyze_buffered(analyzer_state(self)->analyzer, &result));
+  analyze_args args = { analyzer_state(self)->analyzer, &result, AIC_ERROR_CODE_SUCCESS };
+  rb_thread_call_without_gvl(do_analyze, &args, RUBY_UBF_IO, NULL);
+  aic_check(args.rc);
 
   VALUE scores = rb_hash_new();
   rb_hash_aset(scores, ID2SYM(rb_intern("risk_score")), DBL2NUM((double)result.risk_score));
