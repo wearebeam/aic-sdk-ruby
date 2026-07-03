@@ -1,4 +1,5 @@
 #include "aicoustics.h"
+#include <ruby/thread.h> /* rb_thread_call_without_gvl */
 #include <string.h> /* memset */
 
 /* Aicoustics::Analyzer — the Tyto collector + analyzer pair, wrapped together. */
@@ -77,8 +78,42 @@ static VALUE analyzer_configure(int argc, VALUE *argv, VALUE self) {
   return self;
 }
 
+/* GVL-released buffer call */
+typedef struct {
+  struct AicCollector *collector;
+  const float *audio;
+  uint16_t num_channels;
+  size_t num_frames;
+  enum AicErrorCode rc;
+} buffer_args;
+
+static void *do_buffer_interleaved(void *arg) {
+  buffer_args *args = (buffer_args *)arg;
+  args->rc = aic_collector_buffer_interleaved(args->collector, args->audio, args->num_channels, args->num_frames);
+  return NULL;
+}
+static void *do_buffer_sequential(void *arg) {
+  buffer_args *args = (buffer_args *)arg;
+  args->rc = aic_collector_buffer_sequential(args->collector, args->audio, args->num_channels, args->num_frames);
+  return NULL;
+}
+
+/* analyze takes the analyzer handle + a result out-param, so it needs its own GVL-released bundle */
+typedef struct {
+  struct AicAnalyzer *analyzer;
+  struct AicAnalysisResult *result;
+  enum AicErrorCode rc;
+} analyze_args;
+
+static void *do_analyze(void *arg) {
+  analyze_args *args = (analyze_args *)arg;
+  args->rc = aic_analyzer_analyze_buffered(args->analyzer, args->result);
+  return NULL;
+}
+
+/* shared body for interleaved/sequential: copy the binary float32 String into the collector */
 static VALUE analyzer_buffer(int argc, VALUE *argv, VALUE self,
-                             enum AicErrorCode (*buffer_fn)(struct AicCollector *, const float *, uint16_t, size_t)) {
+                             void *(*buffer_fn)(void *)) {
   VALUE buffer, opts;
   rb_scan_args(argc, argv, "1:", &buffer, &opts);
   if (NIL_P(opts)) opts = rb_hash_new();
@@ -91,21 +126,25 @@ static VALUE analyzer_buffer(int argc, VALUE *argv, VALUE self,
   if ((size_t)RSTRING_LEN(buffer) != expected) {
     rb_raise(rb_eArgError, "buffer is %ld bytes, expected %zu", RSTRING_LEN(buffer), expected);
   }
-  aic_check(buffer_fn(analyzer_state(self)->collector, (const float *)RSTRING_PTR(buffer),
-                      channels, num_frames));
+  buffer_args args = { analyzer_state(self)->collector, (const float *)RSTRING_PTR(buffer),
+                       channels, num_frames, AIC_ERROR_CODE_SUCCESS };
+  rb_thread_call_without_gvl(buffer_fn, &args, RUBY_UBF_IO, NULL);
+  aic_check(args.rc);
   return self;
 }
 static VALUE analyzer_buffer_interleaved(int argc, VALUE *argv, VALUE self) {
-  return analyzer_buffer(argc, argv, self, aic_collector_buffer_interleaved);
+  return analyzer_buffer(argc, argv, self, do_buffer_interleaved);
 }
 static VALUE analyzer_buffer_sequential(int argc, VALUE *argv, VALUE self) {
-  return analyzer_buffer(argc, argv, self, aic_collector_buffer_sequential);
+  return analyzer_buffer(argc, argv, self, do_buffer_sequential);
 }
 
 static VALUE analyzer_analyze(VALUE self) {
   struct AicAnalysisResult result;
   memset(&result, 0, sizeof(result));
-  aic_check(aic_analyzer_analyze_buffered(analyzer_state(self)->analyzer, &result));
+  analyze_args args = { analyzer_state(self)->analyzer, &result, AIC_ERROR_CODE_SUCCESS };
+  rb_thread_call_without_gvl(do_analyze, &args, RUBY_UBF_IO, NULL);
+  aic_check(args.rc);
 
   VALUE scores = rb_hash_new();
   rb_hash_aset(scores, ID2SYM(rb_intern("risk_score")), DBL2NUM((double)result.risk_score));
