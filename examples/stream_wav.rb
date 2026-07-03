@@ -3,7 +3,9 @@
 
 # Stream a WAV through the SDK and play the enhanced audio live, printing per-frame
 # VAD + live Tyto scores. Zero-copy hot path (no per-frame allocations); audio is fed
-# on the main thread, Tyto analysis on its own. Setup & usage: examples/README.md.
+# on the main thread, Tyto analysis on its own — and since both the enhancer's process
+# call and the analyzer's buffer/analyze release the GVL, the two threads genuinely run
+# in parallel. Setup & usage: examples/README.md.
 
 require_relative "../lib/aicoustics"
 require_relative "support"
@@ -29,7 +31,9 @@ seconds_per_block   = enhancer.num_frames / rate.to_f
 player = IO.popen(%W[ffplay -f f32le -ar #{rate} -ch_layout mono -nodisp -autoexit -loglevel quiet -i pipe:0], "wb")
 player.sync = true
 
-# Tyto analysis on its own thread so its inference never stalls playback.
+# Tyto analysis on its own thread. buffer_interleaved!/analyze release the GVL (same
+# pattern as the enhancer's process call), so inference overlaps the feed thread
+# instead of pausing all Ruby — playback keeps its real-time cadence during analysis.
 scores = nil
 scores_lock = Mutex.new
 to_analyze = Thread::Queue.new
