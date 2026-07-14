@@ -10,14 +10,25 @@ typedef struct {
   VALUE model;
 } analyzer_t;
 
+/* Measured RSS cost of one collector+analyzer pair (tyto-l-16khz-v5: ~134MiB).
+ * The SDK exposes no size query, so report a fixed estimate. Without it the GC
+ * prices each analyzer at sizeof(analyzer_t) and feels no pressure to collect
+ * dead wrappers, each of which pins the full native allocation — a process
+ * creating analyzers per unit of work grows unbounded between GC runs. */
+#define ANALYZER_NATIVE_MEMSIZE_ESTIMATE ((size_t)134 * 1024 * 1024)
+
 static void analyzer_free(void *ptr) {
   analyzer_t *data = (analyzer_t *)ptr;
   aic_collector_destroy(data->collector);
   aic_analyzer_destroy(data->analyzer);
   xfree(data);
+  rb_gc_adjust_memory_usage(-(ssize_t)ANALYZER_NATIVE_MEMSIZE_ESTIMATE);
 }
 static void analyzer_mark(void *ptr) { rb_gc_mark(((analyzer_t *)ptr)->model); }
-static size_t analyzer_memsize(const void *ptr) { (void)ptr; return sizeof(analyzer_t); }
+static size_t analyzer_memsize(const void *ptr) {
+  (void)ptr;
+  return sizeof(analyzer_t) + ANALYZER_NATIVE_MEMSIZE_ESTIMATE;
+}
 static const rb_data_type_t analyzer_type = {
   "Aicoustics::Analyzer",
   { analyzer_mark, analyzer_free, analyzer_memsize },
@@ -48,6 +59,7 @@ static VALUE analyzer_create(VALUE klass, VALUE model, VALUE license_key) {
   data->model = model;
   VALUE obj = TypedData_Wrap_Struct(klass, &analyzer_type, data);
   rb_ivar_set(obj, rb_intern("@model"), model);
+  rb_gc_adjust_memory_usage((ssize_t)ANALYZER_NATIVE_MEMSIZE_ESTIMATE);
   return obj;
 }
 
