@@ -14,13 +14,23 @@ typedef struct {
   VALUE model; /* retained for lifetime + GC marking */
 } processor_t;
 
+/* Measured RSS cost of one processor (quail-l-16khz-v5: ~1MiB, first-in-process
+ * warmup ~4MiB). Processors share the model's weights, so they are far lighter
+ * than analyzers — the estimate keeps GC accounting honest without meaningfully
+ * raising GC pressure on real-time paths that hold one per session. */
+#define PROCESSOR_NATIVE_MEMSIZE_ESTIMATE ((size_t)4 * 1024 * 1024)
+
 static void processor_free(void *ptr) {
   processor_t *data = (processor_t *)ptr;
   aic_processor_destroy(data->handle);
   xfree(data);
+  rb_gc_adjust_memory_usage(-(ssize_t)PROCESSOR_NATIVE_MEMSIZE_ESTIMATE);
 }
 static void processor_mark(void *ptr) { rb_gc_mark(((processor_t *)ptr)->model); }
-static size_t processor_memsize(const void *ptr) { (void)ptr; return sizeof(processor_t); }
+static size_t processor_memsize(const void *ptr) {
+  (void)ptr;
+  return sizeof(processor_t) + PROCESSOR_NATIVE_MEMSIZE_ESTIMATE;
+}
 static const rb_data_type_t processor_type = {
   "Aicoustics::Processor",
   { processor_mark, processor_free, processor_memsize },
@@ -66,6 +76,7 @@ static VALUE processor_create(int argc, VALUE *argv, VALUE klass) {
   data->model = model;
   VALUE obj = TypedData_Wrap_Struct(klass, &processor_type, data);
   rb_ivar_set(obj, rb_intern("@model"), model);
+  rb_gc_adjust_memory_usage((ssize_t)PROCESSOR_NATIVE_MEMSIZE_ESTIMATE);
   return obj;
 }
 
