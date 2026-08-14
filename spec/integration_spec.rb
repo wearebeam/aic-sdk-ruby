@@ -11,10 +11,10 @@ RSpec.describe "ai-coustics SDK integration" do
       expect(model.id).not_to be_empty
     end
 
-    it "reports an optimal sample rate and frame count" do
+    it "reports an optimal sample rate and block size" do
       rate = model.optimal_sample_rate
       expect(rate).to be > 0
-      expect(model.optimal_num_frames(rate)).to be > 0
+      expect(model.optimal_block_size(rate)).to be > 0
     end
   end
 
@@ -24,13 +24,13 @@ RSpec.describe "ai-coustics SDK integration" do
     let(:model) { Aicoustics::Model.from_file(SpecSupport.model_path) }
     let(:processor) do
       Aicoustics::Processor.create(model, SpecSupport.license_key).tap do |p|
-        p.configure(sample_rate: 16_000, num_channels: 1)
+        p.configure(sample_rate: 16_000)
       end
     end
 
-    it "enhances a frame of audio in place" do
-      output = processor.process(Array.new(processor.num_frames, 0.0))
-      expect(output.length).to eq(processor.num_frames)
+    it "enhances a block of audio in place" do
+      output = processor.process(Array.new(processor.block_size, 0.0))
+      expect(output.length).to eq(processor.block_size)
       expect(output).to all(be_a(Float))
     end
 
@@ -39,13 +39,30 @@ RSpec.describe "ai-coustics SDK integration" do
       expect(processor.context.enhancement_level).to be_within(0.01).of(0.5)
     end
 
-    it "reports a non-negative output delay" do
-      expect(processor.context.output_delay).to be >= 0
+    it "reports a non-negative audio delay" do
+      expect(processor.context.audio_delay).to be >= 0
+    end
+  end
+
+  describe Aicoustics::Vad do
+    before { skip "set AIC_SDK_LICENSE and AIC_SDK_VAD_MODEL" unless SpecSupport.license? && SpecSupport.vad_model? }
+
+    let(:model) { Aicoustics::Model.from_file(SpecSupport.vad_model_path) }
+    let(:vad) do
+      described_class.create(model, SpecSupport.license_key).tap do |v|
+        v.configure(sample_rate: 16_000)
+      end
     end
 
-    it "answers VAD speech detection as a boolean" do
-      processor.process(Array.new(processor.num_frames, 0.0))
-      expect([true, false]).to include(processor.vad.speech_detected?)
+    it "answers speech detection as a boolean after processing a block" do
+      vad.process!(Array.new(vad.block_size, 0.0).pack("f*"))
+      expect([true, false]).to include(vad.context.speech_detected?)
+    end
+
+    it "reports a raw probability and a non-negative prediction delay" do
+      vad.process!(Array.new(vad.block_size, 0.0).pack("f*"))
+      expect(vad.context.raw_vad_probability).to be_between(0.0, 1.0)
+      expect(vad.context.prediction_delay).to be >= 0
     end
   end
 
@@ -54,9 +71,8 @@ RSpec.describe "ai-coustics SDK integration" do
 
     it "returns enhanced PCM aligned to the input length" do
       input = ([0] * 16_000).pack("s<*")
-      result = Aicoustics.enhance_pcm(input, model: SpecSupport.model_path, license_key: SpecSupport.license_key, vad: true)
+      result = Aicoustics.enhance_pcm(input, model: SpecSupport.model_path, license_key: SpecSupport.license_key)
       expect(result.pcm.bytesize).to eq(input.bytesize)
-      expect(result.speech_flags).to all(satisfy { |f| [true, false].include?(f) })
     end
   end
 
@@ -67,9 +83,9 @@ RSpec.describe "ai-coustics SDK integration" do
 
     it "produces an analysis result with all scores populated" do
       analyzer = described_class.create(model, SpecSupport.license_key)
-      analyzer.configure(sample_rate: 16_000, num_channels: 1)
-      buffer = Array.new(analyzer.num_frames, 0.0).pack("f*") # interleaved float32 frame
-      analyzer.buffer_interleaved!(buffer)
+      analyzer.configure(sample_rate: 16_000)
+      buffer = Array.new(analyzer.block_size, 0.0).pack("f*") # mono float32 block
+      analyzer.buffer!(buffer)
       result = analyzer.analyze
       expect(result.to_h.keys).to match_array(Aicoustics::AnalysisResult::ATTRIBUTES)
       expect(result.risk_score).to be_a(Float)

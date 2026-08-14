@@ -1,8 +1,11 @@
 # aicoustics
 
 Native C extension bindings for the [ai-coustics SDK](https://github.com/ai-coustics/aic-sdk-c)
-(`v0.20.0`) — **speech enhancement**, **voice activity detection**, and the **Tyto**
+(`v0.23.0`) — **speech enhancement**, **voice activity detection**, and the **Tyto 1.1**
 audio-quality analyzer, for running ai-coustics audio processing server-side from Ruby.
+
+The SDK is mono-only as of 0.21: every audio API takes a single-channel block of
+`block_size` float32 samples. Downmix (or run one handle per channel) upstream.
 
 This is a thin, faithful wrapper over the vendored native library (the same core the
 official `@ai-coustics/aic-sdk-wasm`, `aic-sdk-py`, and `aic-sdk-rs` packages wrap). It is a
@@ -10,9 +13,9 @@ compiled C extension that links the prebuilt `libaic.{so,dylib}` at build time a
 via an rpath at runtime (no FFI, no runtime gem dependencies). The heavy `process` calls
 release the GVL so audio crunching runs in parallel.
 
-> Validated on `aarch64-darwin` (Ruby 3.4.7): library load, version/VAD/error paths, PCM
-> conversion, and real v5 model loading. Enhancement/VAD processing requires a license key
-> (see Licensing).
+> Validated on `aarch64-darwin` (Ruby 3.4.7): library load, version/error paths, PCM
+> conversion, and licensed enhancement/VAD/Tyto runs against real v7 models. Processing
+> requires a license key (see Licensing).
 
 ## Install
 
@@ -86,23 +89,21 @@ that version is already published.
 ```ruby
 require "aicoustics"
 
-Aicoustics.sdk_version            # => "0.20.0"
-Aicoustics.compatible_model_version # => 5
+Aicoustics.sdk_version            # => "0.23.0"
+Aicoustics.compatible_model_version # => 7
 
 result = Aicoustics.enhance_pcm(
   pcm_s16le,                      # raw 16-bit little-endian mono PCM (a turn's audio)
-  model: "/path/to/quail_vf_2_1_s_16khz_5i8jb8of_v12.aicmodel",
+  model: "/path/to/enhancement_model.aicmodel",
   license_key: ENV.fetch("AIC_SDK_LICENSE"),
-  sample_rate: 16_000,
-  vad: true
+  sample_rate: 16_000
 )
 
-result.pcm                  # enhanced 16-bit PCM, delay-compensated, same length as input
-result.speech_flags         # per-frame [true,false,...] VAD decisions (nil unless vad:)
-result.output_delay_samples # processor algorithmic latency, in samples
+result.pcm                 # enhanced 16-bit PCM, delay-compensated, same length as input
+result.audio_delay_samples # processor algorithmic latency, in samples
 ```
 
-`enhance_pcm` handles framing into the model's optimal block size, Int16↔Float32
+`enhance_pcm` handles slicing into the model's optimal block size, Int16↔Float32
 conversion, flushing the processor tail, and trimming the algorithmic delay so the output
 is time-aligned to the input.
 
@@ -110,53 +111,58 @@ is time-aligned to the input.
 
 ```ruby
 model     = Aicoustics::Model.from_file(path)   # also .from_buffer(bytes)
-model.id                                        # "quail-vf-2.1-s-16khz-...-v12"
+model.id                                        # e.g. "tyto-1.1-l-16khz"
 model.optimal_sample_rate                       # 16000
-model.optimal_num_frames(16_000)                # 240 (model-dependent — never hardcode)
+model.optimal_block_size(16_000)                # 240 (model-dependent — never hardcode)
 
 processor = Aicoustics::Processor.create(model, license_key)
-processor.configure(sample_rate: 16_000, num_channels: 1)
+processor.configure(sample_rate: 16_000)        # block_size: defaults to the model optimum
 
+processor.process!(floats.pack("f*"))           # mono float32 binary String, enhanced in place
 processor.context.enhancement_level = 1.0       # 0.0..1.0 (model-dependent meaning)
 processor.context.bypass = false
-processor.context.output_delay                  # samples
+processor.context.audio_delay                   # samples
 processor.context.reset
 
-vad = processor.vad
-vad.sensitivity = 6.0                            # energy-based VAD: ~1.0..15.0
-vad.speech_detected?                             # call after processing a frame
+# Voice activity detection (needs a dedicated VAD model, e.g. Quail VAD)
+vad = Aicoustics::Vad.create(vad_model, license_key)
+vad.configure(sample_rate: 16_000)
+vad.process!(floats.pack("f*"))                 # feed the ORIGINAL audio, not enhanced output
+vad.context.sensitivity = 0.5                   # 0.0..1.0
+vad.context.speech_detected?
+vad.context.raw_vad_probability                 # model output before hold/threshold post-processing
+vad.context.prediction_delay                    # samples the prediction lags its input
 
 # Tyto audio-quality analyzer (needs a Tyto analysis model, not an enhancement model)
 analyzer = Aicoustics::Analyzer.create(tyto_model, license_key)
-analyzer.configure(sample_rate: 16_000, num_channels: 1)
-analyzer.buffer_interleaved!(floats.pack("f*"))  # interleaved float32 binary String
-analyzer.analyze                                 # => AnalysisResult(risk_score:, noise:, ...)
+analyzer.configure(sample_rate: 16_000)
+analyzer.buffer!(floats.pack("f*"))             # mono float32 binary String
+analyzer.analyze                                # => AnalysisResult(risk_score:, noise:, codec_degradation:, ...)
 ```
 
 Errors map the SDK's `AicErrorCode` to typed exceptions under `Aicoustics::Error`
-(`LicenseExpiredError`, `ModelVersionUnsupportedError`, `EnhancementNotAllowedError`, …),
+(`LicenseExpiredError`, `ModelVersionUnsupportedError`, `ProcessingNotAllowedError`, …),
 each carrying `#code`.
 
 ## Models
 
-- Download from `https://artifacts.ai-coustics.io/`. SDK `0.20.0` requires **model
-  version 5** (`Aicoustics.compatible_model_version # => 5`).
-- Use a **v5** model, e.g. `quail-vf-2-1-s-16khz/v5/quail_vf_2_1_s_16khz_5i8jb8of_v12.aicmodel`
-  (validated). Models below the SDK's compatible version are rejected at load.
-- Optimal frame size is **model-dependent** (this model is 240 samples / 15 ms at 16 kHz).
-  Always read `model.optimal_num_frames(rate)` — do not hardcode.
+- Download from `https://artifacts.ai-coustics.io/`. SDK `0.23.0` requires **model
+  version 7** (`Aicoustics.compatible_model_version # => 7`) — models built for older
+  SDKs (v5 and below) are rejected at load, so re-download every model when bumping.
+- Optimal block size is **model-dependent**. Always read `model.optimal_block_size(rate)`
+  — do not hardcode.
 - `URL=... rake model:fetch` downloads a model for local dev (gitignored).
 
 ## Deployment notes
 
 - **glibc only.** The Linux builds target `*-unknown-linux-gnu`. Run on a glibc base image
   (Debian/Ubuntu slim) — **not** Alpine/musl.
-- **Network egress required.** `process_*` returns `enhancement_not_allowed` if the SDK
+- **Network egress required.** `process!` returns `processing_not_allowed` if the SDK
   cannot reach ai-coustics to authorize the key and report usage — allow outbound network
   in your runtime.
 - **License tier.** Confirm your license key permits server-side usage before rollout.
-- **Threading.** A `Processor` is single-threaded for `process_*` — create one per thread
-  / GoodJob worker. The `*_context` parameter/VAD APIs are thread-safe.
+- **Threading.** A `Processor`/`Vad` is single-threaded for `process!` — create one per
+  thread / GoodJob worker. The `*_context` parameter APIs are thread-safe.
 
 ## Supported platforms
 
@@ -170,7 +176,7 @@ Vendored under `vendor/aic/<sdk-version>/<arch>-<os>/`:
 The extension links the lib for the current platform via an rpath baked at build time
 (`@loader_path`/`$ORIGIN` relative to the vendored dir, so the gem is relocatable). To bump
 the bundled SDK: update `Aicoustics::SDK_VERSION`, regenerate the pinned checksums with
-`VERSION=0.21.0 rake vendor:checksums` (paste them into `ext/aicoustics/sdk_fetcher.rb`),
+`VERSION=x.y.z rake vendor:checksums` (paste them into `ext/aicoustics/sdk_fetcher.rb`),
 then `rake vendor:fetch` and recompile.
 
 ## Testing
@@ -184,6 +190,7 @@ License/model-gated specs skip unless these are set:
 - `AIC_SDK_MODEL` — path to an enhancement `.aicmodel` (model-load specs need no license)
 - `AIC_SDK_LICENSE` — license key (enables processing/VAD specs)
 - `AIC_SDK_ANALYZER_MODEL` — path to a Tyto analysis model (analyzer specs)
+- `AIC_SDK_VAD_MODEL` — path to a dedicated VAD model (VAD specs)
 
 ## Licensing
 

@@ -72,7 +72,7 @@ static VALUE model_optimal_sample_rate(VALUE self) {
   return UINT2NUM(rate);
 }
 
-static VALUE model_optimal_num_frames(int argc, VALUE *argv, VALUE self) {
+static VALUE model_optimal_block_size(int argc, VALUE *argv, VALUE self) {
   VALUE rate_arg;
   rb_scan_args(argc, argv, "01", &rate_arg);
   uint32_t rate;
@@ -81,9 +81,9 @@ static VALUE model_optimal_num_frames(int argc, VALUE *argv, VALUE self) {
   } else {
     rate = (uint32_t)NUM2UINT(rate_arg);
   }
-  size_t frames = 0;
-  aic_check(aic_model_get_optimal_num_frames(model_ptr(self), rate, &frames));
-  return SIZET2NUM(frames);
+  size_t block_size = 0;
+  aic_check(aic_model_get_optimal_block_size(model_ptr(self), rate, &block_size));
+  return SIZET2NUM(block_size);
 }
 
 void init_model(void) {
@@ -93,5 +93,5 @@ void init_model(void) {
   rb_define_singleton_method(cModel, "from_buffer", model_from_buffer, 1);
   rb_define_method(cModel, "id", model_id, 0);
   rb_define_method(cModel, "optimal_sample_rate", model_optimal_sample_rate, 0);
-  rb_define_method(cModel, "optimal_num_frames", model_optimal_num_frames, -1);
+  rb_define_method(cModel, "optimal_block_size", model_optimal_block_size, -1);
 }

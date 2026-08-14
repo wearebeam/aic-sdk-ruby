@@ -17,6 +17,10 @@ module SpecSupport
     ENV["AIC_SDK_ANALYZER_MODEL"]
   end
 
+  def vad_model_path
+    ENV["AIC_SDK_VAD_MODEL"]
+  end
+
   def license?
     license_key && !license_key.empty?
   end
@@ -27,6 +31,10 @@ module SpecSupport
 
   def analyzer_model?
     analyzer_model_path && File.exist?(analyzer_model_path.to_s)
+  end
+
+  def vad_model?
+    vad_model_path && File.exist?(vad_model_path.to_s)
   end
 end
 

@@ -18,7 +18,7 @@ enhancement, `tyto.aicmodel` for analysis), fetched via `URL=... rake model:fetc
 
 ```bash
 ruby examples/enhance_wav.rb <file.wav>   # enhance, then play original vs enhanced
-ruby examples/stream_wav.rb <file.wav>    # stream live: enhanced audio + VAD + Tyto scores
+ruby examples/stream_wav.rb <file.wav>    # stream live: enhanced audio + Tyto scores
 ```
 
 Both read the key from `examples/.env`. `enhance_wav.rb` writes the two WAVs to

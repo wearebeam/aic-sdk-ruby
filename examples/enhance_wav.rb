@@ -15,8 +15,7 @@ result = Aicoustics.enhance_pcm(
   pcm,
   model: ENV.fetch("AIC_SDK_MODEL", File.expand_path("../spec/fixtures/model.aicmodel", __dir__)),
   license_key: ENV.fetch("AIC_SDK_LICENSE"),
-  sample_rate: rate,
-  vad: true
+  sample_rate: rate
 )
 
 base = File.join(__dir__, "output", File.basename(input, ".*"))

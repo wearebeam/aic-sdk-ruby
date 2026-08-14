@@ -3,7 +3,7 @@
 require_relative "aicoustics/version"
 require_relative "aicoustics/errors"
 require_relative "aicoustics/native"
-# C extension: Model, Processor, contexts, Analyzer, sdk_version.
+# C extension: Model, Processor, Vad, contexts, Analyzer, sdk_version.
 # Dev/rake-compiler builds it into lib/aicoustics/; `gem install` builds it onto the
 # extension load path as a top-level file — try both.
 begin
