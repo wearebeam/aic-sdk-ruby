@@ -15,13 +15,23 @@ typedef struct {
   VALUE model; /* retained for lifetime + GC marking */
 } vad_t;
 
+/* Measured RSS cost of one VAD (vad-2-1-xxs-16khz: ~0.2MiB marginal,
+ * ~2.6MiB first-in-process warmup). Same GC-honesty rationale as the
+ * processor/analyzer estimates: without it, dead wrappers look free and
+ * pin their native allocation between GC runs. */
+#define VAD_NATIVE_MEMSIZE_ESTIMATE ((size_t)3 * 1024 * 1024)
+
 static void vad_free(void *ptr) {
   vad_t *data = (vad_t *)ptr;
   aic_vad_destroy(data->handle);
   xfree(data);
+  rb_gc_adjust_memory_usage(-(ssize_t)VAD_NATIVE_MEMSIZE_ESTIMATE);
 }
 static void vad_mark(void *ptr) { rb_gc_mark(((vad_t *)ptr)->model); }
-static size_t vad_memsize(const void *ptr) { (void)ptr; return sizeof(vad_t); }
+static size_t vad_memsize(const void *ptr) {
+  (void)ptr;
+  return sizeof(vad_t) + VAD_NATIVE_MEMSIZE_ESTIMATE;
+}
 static const rb_data_type_t vad_type = {
   "Aicoustics::Vad",
   { vad_mark, vad_free, vad_memsize },
@@ -60,6 +70,7 @@ static VALUE vad_create(int argc, VALUE *argv, VALUE klass) {
   data->model = model;
   VALUE obj = TypedData_Wrap_Struct(klass, &vad_type, data);
   rb_ivar_set(obj, rb_intern("@model"), model);
+  rb_gc_adjust_memory_usage((ssize_t)VAD_NATIVE_MEMSIZE_ESTIMATE);
   return obj;
 }
 
