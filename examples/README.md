@@ -12,13 +12,15 @@ cp examples/.env.example examples/.env  # then add your AIC_SDK_LICENSE
 ```
 
 The demos use the bundled models in `spec/fixtures/` (`model.aicmodel` for
-enhancement, `tyto.aicmodel` for analysis), fetched via `URL=... rake model:fetch`.
+enhancement, `tyto.aicmodel` for analysis, `vad.aicmodel` for speech detection —
+optional; `stream_wav.rb` skips the speech column without it), fetched via
+`URL=... rake model:fetch`.
 
 ## Run
 
 ```bash
 ruby examples/enhance_wav.rb <file.wav>   # enhance, then play original vs enhanced
-ruby examples/stream_wav.rb <file.wav>    # stream live: enhanced audio + Tyto scores
+ruby examples/stream_wav.rb <file.wav>    # stream live: enhanced audio + VAD + Tyto scores
 ```
 
 Both read the key from `examples/.env`. `enhance_wav.rb` writes the two WAVs to

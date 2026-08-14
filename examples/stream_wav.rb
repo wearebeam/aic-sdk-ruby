@@ -1,11 +1,11 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Stream a WAV through the SDK and play the enhanced audio live, printing live Tyto
-# scores. Zero-copy hot path (no per-block allocations); audio is fed on the main
-# thread, Tyto analysis on its own — and since both the enhancer's process call and
-# the analyzer's buffer/analyze release the GVL, the two threads genuinely run in
-# parallel. Setup & usage: examples/README.md.
+# Stream a WAV through the SDK and play the enhanced audio live, printing per-block
+# VAD + live Tyto scores. Zero-copy hot path (no per-block allocations); audio is fed
+# on the main thread, Tyto analysis on its own — and since both the enhancer's process
+# call and the analyzer's buffer/analyze release the GVL, the two threads genuinely
+# run in parallel. Setup & usage: examples/README.md.
 
 require_relative "../lib/aicoustics"
 require_relative "support"
@@ -22,6 +22,17 @@ enhancer = Aicoustics::Processor.create(Aicoustics::Model.from_file("#{fixtures}
 enhancer.configure(sample_rate: rate)
 analyzer = Aicoustics::Analyzer.create(Aicoustics::Model.from_file("#{fixtures}/tyto.aicmodel"), license)
 analyzer.configure(sample_rate: rate)
+
+# The VAD is a standalone handle since SDK 0.21 and needs its own model; skip the
+# speech column if the fixture isn't downloaded. It gets the ORIGINAL audio, not the
+# enhanced output — enhancement changes the signal the VAD model expects. Sharing the
+# enhancer's block size keeps the hot path zero-copy (costs a little prediction
+# latency vs the VAD's own optimum; irrelevant at demo timescales).
+vad = if File.exist?("#{fixtures}/vad.aicmodel")
+  Aicoustics::Vad.create(Aicoustics::Model.from_file("#{fixtures}/vad.aicmodel"), license).tap do |v|
+    v.configure(sample_rate: rate, block_size: enhancer.block_size)
+  end
+end
 
 # Each model consumes a fixed block of `block_size` samples per call; as bytes (mono):
 enhance_block_bytes = enhancer.block_size * FLOAT32_BYTES
@@ -59,12 +70,14 @@ started_at = clock.call
 
 float_audio.bytesize.fdiv(enhance_block_bytes).ceil.times do |i|
   block = +float_audio.byteslice(i * enhance_block_bytes, enhance_block_bytes).ljust(enhance_block_bytes, "\x00")
+  vad&.process!(block)     # VAD reads the original signal (before it's enhanced away)
   enhancer.process!(block) # enhance in place — zero copy
   player.write(block)      # float32 bytes straight to ffplay
   to_analyze.push(block)   # same bytes feed Tyto
 
   current = scores_lock.synchronize { scores }
-  printf("\r[%5.1fs] %s", i * seconds_per_block,
+  speech = vad ? (vad.context.speech_detected? ? "SPEECH " : "silence") : ""
+  printf("\r[%5.1fs] %-7s | %s", i * seconds_per_block, speech,
          current ? "risk %.2f  noise %.2f  reverb %.2f  codec %.2f" % current.values_at(:risk_score, :noise, :speaker_reverb, :codec_degradation) : "")
 
   # keep ~0.4 s of audio buffered ahead of real time so playback stays smooth
