@@ -5,18 +5,19 @@
  * the module/class handle storage, AicErrorCode -> exception mapping, the
  * config-ivar reader, and Init_aicoustics_ext which wires everything up.
  *
- * The handle types themselves live in model.c, processor.c, and analyzer.c.
- * Audio buffers cross the boundary as binary Strings of little-endian float32
- * samples (process_*! mutate in place) or as Arrays of Float (#process).
+ * The handle types themselves live in model.c, processor.c, vad.c, and
+ * analyzer.c. Audio buffers cross the boundary as binary Strings of
+ * little-endian float32 samples (process!/buffer! work in place) or as
+ * Arrays of Float (#process).
  *
  * Error handling routes through aic_check, which delegates to Aicoustics.check!
  * so all error policy stays in one place (lib/aicoustics/errors.rb).
  */
 
 VALUE mAicoustics;
-VALUE cModel, cProcessor, cProcessorContext, cVadContext, cAnalyzer;
+VALUE cModel, cProcessor, cProcessorContext, cVad, cVadContext, cAnalyzer;
 
-ID id_check_bang, id_optimal_num_frames, id_from_h;
+ID id_check_bang, id_optimal_block_size, id_from_h;
 ID id_enable, id_session_id, id_export_interval_ms;
 
 /* ---- error mapping -------------------------------------------------- */
@@ -26,10 +27,10 @@ static const char *code_to_sym(enum AicErrorCode code) {
     case AIC_ERROR_CODE_SUCCESS:                     return "success";
     case AIC_ERROR_CODE_NULL_POINTER:                return "null_pointer";
     case AIC_ERROR_CODE_PARAMETER_OUT_OF_RANGE:      return "parameter_out_of_range";
-    case AIC_ERROR_CODE_PROCESSOR_NOT_INITIALIZED:   return "processor_not_initialized";
+    case AIC_ERROR_CODE_NOT_INITIALIZED:             return "not_initialized";
     case AIC_ERROR_CODE_AUDIO_CONFIG_UNSUPPORTED:    return "audio_config_unsupported";
     case AIC_ERROR_CODE_AUDIO_CONFIG_MISMATCH:       return "audio_config_mismatch";
-    case AIC_ERROR_CODE_ENHANCEMENT_NOT_ALLOWED:     return "enhancement_not_allowed";
+    case AIC_ERROR_CODE_PROCESSING_NOT_ALLOWED:      return "processing_not_allowed";
     case AIC_ERROR_CODE_INTERNAL_ERROR:              return "internal_error";
     case AIC_ERROR_CODE_LICENSE_FORMAT_INVALID:      return "license_format_invalid";
     case AIC_ERROR_CODE_LICENSE_VERSION_UNSUPPORTED: return "license_version_unsupported";
@@ -37,7 +38,7 @@ static const char *code_to_sym(enum AicErrorCode code) {
     case AIC_ERROR_CODE_TOKEN_UPDATE_UNSUPPORTED:    return "token_update_unsupported";
     case AIC_ERROR_CODE_MODEL_INVALID:               return "model_invalid";
     case AIC_ERROR_CODE_MODEL_VERSION_UNSUPPORTED:   return "model_version_unsupported";
-    case AIC_ERROR_CODE_MODEL_FILE_PATH_INVALID:     return "model_file_path_invalid";
+    case AIC_ERROR_CODE_FILE_PATH_INVALID:           return "file_path_invalid";
     case AIC_ERROR_CODE_FILE_SYSTEM_ERROR:           return "file_system_error";
     case AIC_ERROR_CODE_MODEL_DATA_UNALIGNED:        return "model_data_unaligned";
     case AIC_ERROR_CODE_MODEL_TYPE_UNSUPPORTED:      return "model_type_unsupported";
@@ -61,22 +62,21 @@ size_t ivar_sizet(VALUE self, const char *name, VALUE override) {
   return NUM2SIZET(value);
 }
 
-uint16_t checked_channels(size_t num_channels) {
-  if (num_channels == 0 || num_channels > UINT16_MAX) {
-    rb_raise(rb_eArgError, "num_channels must be between 1 and %u", (unsigned)UINT16_MAX);
+size_t checked_block_bytes(size_t block_size) {
+  if (block_size > SIZE_MAX / sizeof(float)) {
+    rb_raise(rb_eArgError, "block byte size overflows size_t");
   }
-  return (uint16_t)num_channels;
+  return block_size * sizeof(float);
 }
 
-size_t checked_sample_count(size_t num_frames, size_t num_channels) {
-  if (num_frames != 0 && num_channels > SIZE_MAX / num_frames) {
-    rb_raise(rb_eArgError, "num_frames * num_channels overflows size_t");
-  }
-  size_t count = num_frames * num_channels;
-  if (count > SIZE_MAX / sizeof(float)) {
-    rb_raise(rb_eArgError, "buffer byte size overflows size_t");
-  }
-  return count;
+struct AicOtelConfig *otel_config_from(VALUE otel, struct AicOtelConfig *config, VALUE *session_guard) {
+  if (NIL_P(otel)) return NULL;
+  config->enable = RTEST(rb_funcall(otel, id_enable, 0));
+  VALUE session = rb_funcall(otel, id_session_id, 0);
+  config->session_id = NIL_P(session) ? NULL : StringValueCStr(session);
+  config->export_interval_ms = (uint32_t)NUM2UINT(rb_funcall(otel, id_export_interval_ms, 0));
+  *session_guard = session;
+  return config;
 }
 
 /* ---- module-level --------------------------------------------------- */
@@ -86,7 +86,7 @@ static VALUE m_compatible_model_version(VALUE self) { (void)self; return UINT2NU
 
 void Init_aicoustics_ext(void) {
   id_check_bang = rb_intern("check!");
-  id_optimal_num_frames = rb_intern("optimal_num_frames");
+  id_optimal_block_size = rb_intern("optimal_block_size");
   id_from_h = rb_intern("from_h");
   id_enable = rb_intern("enable");
   id_session_id = rb_intern("session_id");
@@ -98,5 +98,6 @@ void Init_aicoustics_ext(void) {
 
   init_model();
   init_processor();
+  init_vad();
   init_analyzer();
 }

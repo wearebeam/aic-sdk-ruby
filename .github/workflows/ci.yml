@@ -30,3 +30,40 @@ jobs:
       # checksum verify → build the native ext) then `spec`.
       - name: Compile (fresh fetch) and run specs
         run: bundle exec rake
+
+  soak:
+    name: native soak & GC stress
+    runs-on: ubuntu-latest
+    env:
+      AIC_SDK_LICENSE: ${{ secrets.AIC_SDK_LICENSE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      # Exercises native handle lifecycles at volume (leaks), under GC.stress
+      # with compaction (marking/pinning bugs), and in the production threading
+      # shape (races) — the failure modes the offline specs can't reach. Model
+      # files are public downloads; only the license is secret, so the job
+      # no-ops on forks or until the AIC_SDK_LICENSE secret is configured.
+      - name: Run soak suite (skips without an AIC_SDK_LICENSE secret)
+        run: |
+          if [ -z "$AIC_SDK_LICENSE" ]; then
+            echo "AIC_SDK_LICENSE secret not set — skipping soak suite"
+            exit 0
+          fi
+          curl -fsSL --retry 3 -o spec/fixtures/model.aicmodel --create-dirs \
+            https://artifacts.ai-coustics.io/models/quail-vf-2-2-s-16khz/v7/quail_vf_2_2_s_16khz_gf70x7zf_v14.aicmodel
+          curl -fsSL --retry 3 -o spec/fixtures/tyto.aicmodel \
+            https://artifacts.ai-coustics.io/models/tyto-1-1-l-16khz/v7/tyto_1_1_l_16khz_t7y7v3h5_v58.aicmodel
+          curl -fsSL --retry 3 -o spec/fixtures/vad.aicmodel \
+            https://artifacts.ai-coustics.io/models/vad-2-1-xxs-16khz/v7/vad_2_1_xxs_16khz_mw7jdprk_v36.aicmodel
+          bundle exec rake compile
+          AIC_SDK_SOAK=1 \
+            AIC_SDK_MODEL=spec/fixtures/model.aicmodel \
+            AIC_SDK_ANALYZER_MODEL=spec/fixtures/tyto.aicmodel \
+            AIC_SDK_VAD_MODEL=spec/fixtures/vad.aicmodel \
+            bundle exec rspec spec/soak_spec.rb

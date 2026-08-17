@@ -12,7 +12,9 @@ cp examples/.env.example examples/.env  # then add your AIC_SDK_LICENSE
 ```
 
 The demos use the bundled models in `spec/fixtures/` (`model.aicmodel` for
-enhancement, `tyto.aicmodel` for analysis), fetched via `URL=... rake model:fetch`.
+enhancement, `tyto.aicmodel` for analysis, `vad.aicmodel` for speech detection —
+optional; `stream_wav.rb` skips the speech column without it), fetched via
+`URL=... rake model:fetch`.
 
 ## Run
 

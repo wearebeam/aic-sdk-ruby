@@ -2,6 +2,7 @@
 
 require "rspec/core/rake_task"
 require "rake/extensiontask"
+require_relative "lib/aicoustics/version"
 
 Rake::ExtensionTask.new("aicoustics_ext") do |ext|
   ext.ext_dir = "ext/aicoustics"
@@ -13,14 +14,14 @@ task spec: :compile
 task default: :spec
 
 namespace :vendor do
-  desc "Download and vendor the native libaic libraries for all platforms (VERSION=0.20.0)"
+  desc "Download and vendor the native libaic libraries for all platforms (VERSION=#{Aicoustics::SDK_VERSION})"
   task :fetch do
     require_relative "ext/aicoustics/sdk_fetcher"
     version = ENV.fetch("VERSION", Aicoustics::SDK_VERSION)
     Aicoustics::SdkFetcher.fetch_all(version: version).each { |what| puts "vendored #{what}" }
   end
 
-  desc "Print SHA256 checksums for every platform tarball (VERSION=0.20.0) to pin in sdk_fetcher.rb"
+  desc "Print SHA256 checksums for every platform tarball (VERSION=#{Aicoustics::SDK_VERSION}) to pin in sdk_fetcher.rb"
   task :checksums do
     require_relative "ext/aicoustics/sdk_fetcher"
     require "digest"
