@@ -36,6 +36,10 @@ module SpecSupport
   def vad_model?
     vad_model_path && File.exist?(vad_model_path.to_s)
   end
+
+  def soak?
+    ENV["AIC_SDK_SOAK"] == "1" && license? && model? && analyzer_model? && vad_model?
+  end
 end
 
 RSpec.configure do |config|
@@ -44,4 +48,5 @@ RSpec.configure do |config|
   end
   config.disable_monkey_patching!
   config.order = :random
+  config.filter_run_excluding(soak: true) unless ENV["AIC_SDK_SOAK"] == "1"
 end

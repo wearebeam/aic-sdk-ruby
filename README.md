@@ -191,6 +191,9 @@ License/model-gated specs skip unless these are set:
 - `AIC_SDK_LICENSE` — license key (enables processing/VAD specs)
 - `AIC_SDK_ANALYZER_MODEL` — path to a Tyto analysis model (analyzer specs)
 - `AIC_SDK_VAD_MODEL` — path to a dedicated VAD model (VAD specs)
+- `AIC_SDK_SOAK=1` — additionally runs the native soak/GC-stress/threading suite
+  (`spec/soak_spec.rb`; needs the license and all three models; CI runs it when
+  the `AIC_SDK_LICENSE` repo secret is set)
 
 ## Licensing
 
