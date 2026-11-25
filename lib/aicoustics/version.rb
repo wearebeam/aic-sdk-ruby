@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Aicoustics
-  VERSION = "0.2.0"
+  VERSION = "0.3.0"
 
-  SDK_VERSION = "0.23.0"
+  SDK_VERSION = "0.26.0"
 end

@@ -1,7 +1,7 @@
 # aicoustics
 
 Native C extension bindings for the [ai-coustics SDK](https://github.com/ai-coustics/aic-sdk-c)
-(`v0.23.0`) — **speech enhancement**, **voice activity detection**, and the **Tyto 1.1**
+(`v0.26.0`) — **speech enhancement**, **voice activity detection**, and the **Tyto 1.2**
 audio-quality analyzer, for running ai-coustics audio processing server-side from Ruby.
 
 The SDK is mono-only as of 0.21: every audio API takes a single-channel block of
@@ -14,7 +14,7 @@ via an rpath at runtime (no FFI, no runtime gem dependencies). The heavy `proces
 release the GVL so audio crunching runs in parallel.
 
 > Validated on `aarch64-darwin` (Ruby 3.4.7): library load, version/error paths, PCM
-> conversion, and licensed enhancement/VAD/Tyto runs against real v7 models. Processing
+> conversion, and licensed enhancement/VAD/Tyto runs against real v8 models. Processing
 > requires a license key (see Licensing).
 
 ## Install
@@ -89,8 +89,8 @@ that version is already published.
 ```ruby
 require "aicoustics"
 
-Aicoustics.sdk_version            # => "0.23.0"
-Aicoustics.compatible_model_version # => 7
+Aicoustics.sdk_version            # => "0.26.0"
+Aicoustics.compatible_model_version # => 8
 
 result = Aicoustics.enhance_pcm(
   pcm_s16le,                      # raw 16-bit little-endian mono PCM (a turn's audio)
@@ -111,7 +111,7 @@ is time-aligned to the input.
 
 ```ruby
 model     = Aicoustics::Model.from_file(path)   # also .from_buffer(bytes)
-model.id                                        # e.g. "tyto-1.1-l-16khz"
+model.id                                        # e.g. "tyto-1.2-l-16khz"
 model.optimal_sample_rate                       # 16000
 model.optimal_block_size(16_000)                # 240 (model-dependent — never hardcode)
 
@@ -146,9 +146,12 @@ each carrying `#code`.
 
 ## Models
 
-- Download from `https://artifacts.ai-coustics.io/`. SDK `0.23.0` requires **model
-  version 7** (`Aicoustics.compatible_model_version # => 7`) — models built for older
-  SDKs (v5 and below) are rejected at load, so re-download every model when bumping.
+- Download from `https://artifacts.ai-coustics.io/`. SDK `0.26.0` requires **model
+  version 8** (`Aicoustics.compatible_model_version # => 8`) — v7 and older files are
+  rejected at load, so re-download every model when bumping. Version 8 files exist only
+  under the September 2026 IDs: `quail-l-16khz` is now `quail-ms-l-16khz` (same
+  `dtv5nvgu_v20` build) and `vad-2.1-xxs-16khz` is now `vad-ms-2.1-xxs-16khz`. Tyto 1.1
+  has no version 8 file; SDK 0.26.0 ships with Tyto 1.2 (`tyto-1.2-l-16khz`).
 - Optimal block size is **model-dependent**. Always read `model.optimal_block_size(rate)`
   — do not hardcode.
 - `URL=... rake model:fetch` downloads a model for local dev (gitignored).

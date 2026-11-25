@@ -36,11 +36,11 @@ module Aicoustics
     # SHA256 of each release tarball, keyed by SDK version then platform slug.
     # Refresh when bumping SDK_VERSION: `rake vendor:checksums VERSION=x.y.z`.
     CHECKSUMS = {
-      "0.23.0" => {
-        "aarch64-darwin" => "5e4dbe414eb5cb1f1ab63d793488ffa17f2f4b4669c8bbddc763571227b838ab",
-        "x86_64-darwin" => "335b6e0c2ec1e60215e020e5ac5dfbb24906f0e5ea235f59daa8c43b3b1ad24b",
-        "aarch64-linux" => "704ff81901c9807428b05556fe64595d81070bd59991339b684c72b3e16fa868",
-        "x86_64-linux" => "54bebf5862c2eab3500b490c2f5040cda01951ec053da0e88c6b36e2c2d9e21f"
+      "0.26.0" => {
+        "aarch64-darwin" => "be6641d0123c830966213be0e2ac9109aaa7681b54f700600b0be488c21d02fa",
+        "x86_64-darwin" => "84b1979ae8bf504973f95463391ed5c5ec37cec62a53c89abcaeb6da582d87d6",
+        "aarch64-linux" => "cb5bfc7520405e61b5598e42ef1eaaaedb94b385baa952797d453ebf616f970f",
+        "x86_64-linux" => "b1658e008f884cf47e491cdf6c79d18527c9b6dd87636fde002b6d1d83d577c1"
       }
     }.freeze
 
